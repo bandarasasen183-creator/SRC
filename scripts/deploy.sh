@@ -66,9 +66,34 @@ if [ -z "$CURRENT" ] || [ "$CURRENT" = "demo-src" ]; then
   echo "Your Firebase projects:"
   $FIREBASE projects:list || true
   echo
-  read -rp "Project ID to deploy to: " PROJECT_ID
-  [ -z "$PROJECT_ID" ] && { err "No project ID given."; exit 1; }
-  $FIREBASE use --add "$PROJECT_ID" 2>/dev/null || $FIREBASE use "$PROJECT_ID"
+  warn "Copy an ID from the 'Project ID' column above — not the display name."
+  echo
+
+  # Re-prompt on a bad ID rather than dying, so a typo doesn't mean starting
+  # the whole script again.
+  PROJECT_ID=""
+  for attempt in 1 2 3; do
+    read -rp "Project ID to deploy to: " ENTERED
+    ENTERED="$(printf '%s' "$ENTERED" | tr -d '[:space:]')"
+
+    if [ -z "$ENTERED" ]; then
+      err "Nothing entered."
+    elif $FIREBASE use --add "$ENTERED" >/dev/null 2>&1 || $FIREBASE use "$ENTERED" >/dev/null 2>&1; then
+      PROJECT_ID="$ENTERED"
+      break
+    else
+      err "'$ENTERED' isn't a project you can access."
+      echo "   Check the spelling against the Project ID column above."
+      echo "   No SRC project in that list? Create one at"
+      echo "   https://console.firebase.google.com, then re-run this script."
+    fi
+    [ "$attempt" -lt 3 ] && echo
+  done
+
+  if [ -z "$PROJECT_ID" ]; then
+    err "Giving up after 3 attempts. Nothing was deployed."
+    exit 1
+  fi
 else
   PROJECT_ID="$CURRENT"
 fi
