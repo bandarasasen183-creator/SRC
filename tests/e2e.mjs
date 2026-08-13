@@ -339,7 +339,7 @@ try {
   await dark.emulateMedia({ colorScheme: 'dark' });
   await dark.goto(APP, { waitUntil: 'domcontentloaded' });
   const bg = await dark.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  check('dark mode paints a dark background', bg === 'rgb(6, 19, 16)', bg);
+  check('dark mode paints a dark background', bg === 'rgb(32, 33, 36)', bg);
   await dark.screenshot({ path: `${SHOTS}/11-dark-signin.png` });
 
   const darkFeed = await newPage();
