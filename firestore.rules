@@ -103,6 +103,13 @@ service cloud.firestore {
 
       // Teachers can change roles and remove people.
       allow update, delete: if isTeacher();
+
+      // Private per-user mirror of event sign-ups. Only its owner touches it;
+      // it exists so "my events" costs one small query instead of a read per
+      // event. The authoritative record lives under events/{id}/signups.
+      match /mySignups/{eventId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
     }
 
     // ---- roster -----------------------------------------------------------
@@ -225,6 +232,56 @@ service cloud.firestore {
           && form().allowMultiple == true;
 
         allow delete: if isTeacher();
+      }
+    }
+
+    // ---- events -----------------------------------------------------------
+    // The calendar. Any teacher can run events (shared logistics, unlike
+    // announcements which are personal posts).
+
+    match /events/{eventId} {
+      allow get, list: if isMember();
+
+      allow create: if isTeacher()
+        && incoming().createdBy == request.auth.uid
+        && incoming().title is string
+        && incoming().title.size() > 0
+        && incoming().title.size() <= 200
+        && incoming().date is string
+        && incoming().date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incoming().description is string
+        && incoming().description.size() <= 5000;
+
+      allow update: if isTeacher()
+        && incoming().title is string
+        && incoming().title.size() > 0
+        && incoming().title.size() <= 200
+        && !changed().hasAny(['createdBy', 'createdAt']);
+
+      allow delete: if isTeacher();
+
+      // ---- sign-ups -------------------------------------------------------
+      // Same privacy shape as form responses: a student sees their own,
+      // teachers see everyone. get/list split for the same reason (a merged
+      // `read` would let a student list the whole collection).
+      match /signups/{uid} {
+        function event() {
+          return get(/databases/$(database)/documents/events/$(eventId)).data;
+        }
+
+        allow get: if isMember() && (request.auth.uid == uid || isTeacher());
+        allow list: if isTeacher();
+
+        // Sign up as yourself, under your real name, while sign-ups are open.
+        allow create: if isMember()
+          && request.auth.uid == uid
+          && incoming().uid == request.auth.uid
+          && incoming().name == profile().name
+          && event().signupOpen == true;
+
+        // Unlike form responses, changing your mind is allowed.
+        allow delete: if isMember()
+          && (request.auth.uid == uid || isTeacher());
       }
     }
 

@@ -334,6 +334,52 @@ try {
   check('teacher gets a delete control on a student comment',
     await t.isVisible('.comment button:has-text("Delete")'));
 
+  /* ---- 8b. events calendar ----------------------------------------------- */
+  await t.click('[data-route="events"]');
+  await t.waitForSelector('.cal-grid', { timeout: 10000 });
+  check('calendar renders', await t.isVisible('.cal-grid'));
+
+  await t.click('#newEvent');
+  await t.waitForSelector('#evTitle');
+  await t.fill('#evTitle', 'SRC movie night');
+  await t.fill('#evLoc', 'School hall');
+  await t.fill('#evDesc', 'Bring snacks and a pillow.');
+  await t.click('#evSave');
+  await t.waitForTimeout(2000);
+  check('event appears in the month list', await t.isVisible('text=SRC movie night'));
+  check('calendar marks the event day with a dot', await t.isVisible('.cal-cell.has-ev'));
+
+  // Student signs up.
+  await s.click('[data-route="events"]');
+  await s.waitForSelector('.cal-grid', { timeout: 10000 });
+  await s.waitForSelector('.event-row', { timeout: 10000 });
+  check('student sees the event on the calendar', await s.isVisible('text=SRC movie night'));
+  await s.click('.event-row');
+  await s.waitForSelector('#evSignup', { timeout: 10000 });
+  await s.click('#evSignup');
+  await s.waitForTimeout(2000);
+  check('student sees the signed-up state', await s.isVisible("text=You're signed up"));
+  await s.keyboard.press('Escape');
+  await s.waitForTimeout(400);
+  check('list now shows the Going badge', await s.isVisible('text=✓ Going'));
+
+  // "Mine" filter shows only what they signed up for.
+  await s.click('.seg [data-f="mine"]');
+  await s.waitForTimeout(400);
+  check('"Mine" filter still shows the signed-up event',
+    await s.isVisible('text=SRC movie night'));
+
+  // Teacher sees who is coming.
+  await t.click('.event-row');
+  await t.waitForSelector('text=signed up', { timeout: 10000 });
+  await t.waitForTimeout(800);
+  check('teacher sees the attendee count', await t.isVisible('text=1 signed up'));
+  check('teacher sees the attendee name', await t.isVisible('.modal >> text=John Smith'));
+  await t.keyboard.press('Escape');
+  await t.waitForTimeout(300);
+  await t.screenshot({ path: `${SHOTS}/13-events.png`, fullPage: true });
+  await s.screenshot({ path: `${SHOTS}/14-events-student.png`, fullPage: true });
+
   /* ---- 9. dark mode ------------------------------------------------------ */
   const dark = await newPage();
   await dark.emulateMedia({ colorScheme: 'dark' });

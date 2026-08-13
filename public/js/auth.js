@@ -9,7 +9,7 @@ import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword,
   doc, getDoc, setDoc, serverTimestamp,
 } from './fb.js';
-import { esc, h, $, toast, busy, friendlyError, modal } from './ui.js';
+import { esc, h, $, toast, busy, friendlyError, modal, logoSvg } from './ui.js';
 import { normaliseEmail } from './emails.js';
 
 const PENDING_EMAIL_KEY = 'src.pendingEmail';
@@ -29,7 +29,7 @@ export function renderSignIn(mountEl) {
   mountEl.replaceChildren(h(`
     <div class="wrap">
       <div class="auth-hero">
-        <div class="logo-mark">SRC</div>
+        <div class="hero-logo">${logoSvg(56)}</div>
         <h1>Student Representative Council</h1>
         <p>Sign in with your school email. No password needed — we'll email you a link.</p>
       </div>
@@ -215,7 +215,7 @@ export function renderOnboarding(mountEl, user, onDone) {
   mountEl.replaceChildren(h(`
     <div class="wrap">
       <div class="auth-hero">
-        <div class="logo-mark">SRC</div>
+        <div class="hero-logo">${logoSvg(56)}</div>
         <h1>One quick thing</h1>
         <p>Signed in as <strong>${esc(email)}</strong></p>
       </div>

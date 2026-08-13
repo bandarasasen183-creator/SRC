@@ -1,5 +1,20 @@
 // Small DOM + rendering helpers. No framework.
 
+/**
+ * The SRC logo: a green tile with an announcement horn. Inline SVG so it is
+ * crisp at any size and needs no image request.
+ */
+export function logoSvg(size = 28) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" style="display:block;flex:none">
+    <rect width="48" height="48" rx="11" fill="#188038"/>
+    <g transform="translate(-1 0)">
+      <path fill="#fff" d="M14 19h6l10-7v24l-10-7h-6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"/>
+      <path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M33.5 19.5a6.5 6.5 0 0 1 0 9"/>
+      <path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M36.5 16a10.5 10.5 0 0 1 0 16"/>
+    </g>
+  </svg>`;
+}
+
 /** Escape text for safe interpolation into HTML. Used on EVERY user string. */
 export function esc(s) {
   return String(s ?? '')

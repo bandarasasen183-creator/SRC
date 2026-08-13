@@ -400,3 +400,56 @@ tbody tr:hover { background: var(--hover); }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---- events calendar ----------------------------------------------------- */
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: .85rem; font-weight: 600; color: var(--text-muted);
+  padding: 6px 16px;
+}
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--brand-tint); color: var(--brand); }
+
+.cal {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); overflow: hidden;
+}
+.cal-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 6px 8px; }
+.cal-dow {
+  text-align: center; font-size: .68rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .04em; padding: 8px 0 4px;
+}
+.cal-cell {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; padding: 2px 0 4px; text-align: center; border-radius: 8px;
+}
+.cal-cell.empty { cursor: default; }
+.cal-cell:hover:not(.empty) { background: var(--hover); }
+.cal-cell .num {
+  width: 30px; height: 30px; line-height: 30px; border-radius: 50%;
+  display: inline-block; font-size: .88rem; color: var(--text);
+}
+.cal-cell.today .num { background: var(--brand); color: var(--brand-text); font-weight: 600; }
+.cal-cell.selected:not(.today) .num { background: var(--brand-tint); color: var(--brand); font-weight: 600; }
+.cal-cell .evdot {
+  display: block; width: 5px; height: 5px; border-radius: 50%;
+  margin: 1px auto 0; background: var(--brand); visibility: hidden;
+}
+.cal-cell.has-ev .evdot { visibility: visible; }
+
+.event-row {
+  display: flex; gap: 14px; align-items: center;
+  padding: 13px 0; border-top: 1px solid var(--border); cursor: pointer;
+}
+.event-row:first-child { border-top: 0; }
+.event-date { flex: none; width: 40px; text-align: center; line-height: 1.15; }
+.event-date .d { font-size: 1.25rem; font-weight: 600; color: var(--brand); }
+.event-date .w { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+
+.auth-hero .hero-logo { display: flex; justify-content: center; margin-bottom: 16px; }

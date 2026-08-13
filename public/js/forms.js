@@ -333,7 +333,7 @@ export async function loadResponses(formId) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-function csvCell(v) {
+export function csvCell(v) {
   const s = Array.isArray(v) ? v.join('; ') : String(v ?? '');
   // Guard against spreadsheet formula injection from student-typed text.
   const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;

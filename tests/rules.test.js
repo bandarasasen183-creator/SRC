@@ -123,6 +123,21 @@ async function seed() {
     });
 
     await setDoc(doc(db, 'mailLog', 'ann_open'), { status: 'sent', sent: 50 });
+
+    await setDoc(doc(db, 'events', 'ev_open'), {
+      title: 'Movie night', date: '2026-08-20', description: '',
+      signupOpen: true, createdBy: TEACHER_UID, createdAt: 1,
+    });
+    await setDoc(doc(db, 'events', 'ev_closed'), {
+      title: 'Staff-run stall', date: '2026-08-22', description: '',
+      signupOpen: false, createdBy: TEACHER_UID, createdAt: 1,
+    });
+    await setDoc(doc(db, 'events', 'ev_open', 'signups', OTHER_UID), {
+      uid: OTHER_UID, name: 'Sarah Lee', email: OTHER_EMAIL, signedUpAt: 1,
+    });
+    await setDoc(doc(db, 'users', OTHER_UID, 'mySignups', 'ev_open'), {
+      eventId: 'ev_open', date: '2026-08-20', signedUpAt: 1,
+    });
   });
 }
 
@@ -513,6 +528,135 @@ describe('access requests', () => {
     const db = as(TEACHER_UID, TEACHER_EMAIL);
     await assertSucceeds(getDocs(collection(db, 'accessRequests')));
     await assertSucceeds(deleteDoc(doc(db, 'accessRequests', UNINVITED_EMAIL)));
+  });
+});
+
+describe('events and sign-ups', () => {
+  before(seed);
+
+  test('signed out cannot read events', async () => {
+    const db = signedOut();
+    await assertFails(getDocs(collection(db, 'events')));
+  });
+
+  test('student CAN read the events calendar', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(getDocs(collection(db, 'events')));
+  });
+
+  test('student cannot create an event', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(
+      addDoc(collection(db, 'events'), {
+        title: 'Fake event', date: '2026-09-01', description: '',
+        signupOpen: true, createdBy: STUDENT_UID, createdAt: 2,
+      })
+    );
+  });
+
+  test('student cannot edit or delete an event', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(updateDoc(doc(db, 'events', 'ev_open'), { title: 'defaced' }));
+    await assertFails(deleteDoc(doc(db, 'events', 'ev_open')));
+  });
+
+  test('teacher CAN create an event', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    await assertSucceeds(
+      addDoc(collection(db, 'events'), {
+        title: 'Fundraiser BBQ', date: '2026-09-05', description: 'Sausages.',
+        signupOpen: true, createdBy: TEACHER_UID, createdAt: 2,
+      })
+    );
+  });
+
+  test('any teacher CAN edit an event (shared logistics)', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    await assertSucceeds(updateDoc(doc(db, 'events', 'ev_open'), { title: 'Movie night (new time)' }));
+  });
+
+  test('student CAN sign up to an open event as themselves', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(
+      setDoc(doc(db, 'events', 'ev_open', 'signups', STUDENT_UID), {
+        uid: STUDENT_UID, name: 'John Smith', email: STUDENT_EMAIL, signedUpAt: 2,
+      })
+    );
+  });
+
+  test('student cannot sign up under another uid', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(
+      setDoc(doc(db, 'events', 'ev_open', 'signups', UNINVITED_UID), {
+        uid: UNINVITED_UID, name: 'Random Person', signedUpAt: 2,
+      })
+    );
+  });
+
+  test('student cannot sign up under a fake name', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), 'events', 'ev_open', 'signups', STUDENT_UID));
+    });
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(
+      setDoc(doc(db, 'events', 'ev_open', 'signups', STUDENT_UID), {
+        uid: STUDENT_UID, name: 'Anonymous', signedUpAt: 2,
+      })
+    );
+  });
+
+  test('student cannot sign up to a CLOSED event', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(
+      setDoc(doc(db, 'events', 'ev_closed', 'signups', STUDENT_UID), {
+        uid: STUDENT_UID, name: 'John Smith', signedUpAt: 2,
+      })
+    );
+  });
+
+  test('student cannot LIST who signed up', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(getDocs(collection(db, 'events', 'ev_open', 'signups')));
+  });
+
+  test('student cannot read another student\'s signup', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(getDoc(doc(db, 'events', 'ev_open', 'signups', OTHER_UID)));
+  });
+
+  test('teacher CAN list the signups', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    await assertSucceeds(getDocs(collection(db, 'events', 'ev_open', 'signups')));
+  });
+
+  test('student CAN remove their own signup, but not someone else\'s', async () => {
+    // Re-create the student signup (the fake-name test deleted it).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'events', 'ev_open', 'signups', STUDENT_UID), {
+        uid: STUDENT_UID, name: 'John Smith', signedUpAt: 2,
+      });
+    });
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(deleteDoc(doc(db, 'events', 'ev_open', 'signups', STUDENT_UID)));
+    await assertFails(deleteDoc(doc(db, 'events', 'ev_open', 'signups', OTHER_UID)));
+  });
+
+  test('student CAN keep their own mySignups mirror', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(
+      setDoc(doc(db, 'users', STUDENT_UID, 'mySignups', 'ev_open'), {
+        eventId: 'ev_open', date: '2026-08-20', signedUpAt: 2,
+      })
+    );
+    await assertSucceeds(getDocs(collection(db, 'users', STUDENT_UID, 'mySignups')));
+  });
+
+  test('student cannot read or write another user\'s mySignups', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(getDocs(collection(db, 'users', OTHER_UID, 'mySignups')));
+    await assertFails(
+      setDoc(doc(db, 'users', OTHER_UID, 'mySignups', 'ev_open'), { eventId: 'ev_open' })
+    );
   });
 });
 

@@ -1,7 +1,7 @@
 // App shell: auth state, nav, routing.
 
 import { auth, db, onAuthStateChanged, signOut, doc, getDoc } from './fb.js';
-import { esc, h, $, toast, friendlyError, modal } from './ui.js';
+import { esc, h, $, toast, friendlyError, modal, logoSvg } from './ui.js';
 import { state, isTeacher } from './state.js';
 import {
   renderSignIn, completeEmailLinkIfPresent, renderOnboarding,
@@ -9,6 +9,7 @@ import {
 } from './auth.js';
 import { renderFeed, stopFeed } from './feed.js';
 import { renderAdmin } from './admin.js';
+import { renderEvents } from './events.js';
 
 const appEl = $('#app');
 
@@ -32,7 +33,7 @@ function cycleTheme() {
 
 /* ---- routing ------------------------------------------------------------- */
 
-const ROUTES = { feed: 'Announcements', admin: 'Admin' };
+const ROUTES = { feed: 'Announcements', events: 'Events', admin: 'Admin' };
 
 function currentRoute() {
   const r = location.hash.replace(/^#\/?/, '') || 'feed';
@@ -47,7 +48,7 @@ function shell() {
       <header class="topbar">
         <div class="topbar-in">
           <a class="logo" href="#/feed">
-            <span class="logo-mark">SRC</span>
+            ${logoSvg(30)}
             <span>SRC</span>
           </a>
           <span class="spacer"></span>
@@ -76,6 +77,7 @@ function shell() {
 
   stopFeed();
   if (route === 'admin') renderAdmin(view);
+  else if (route === 'events') renderEvents(view);
   else renderFeed(view);
 }
 

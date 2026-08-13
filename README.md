@@ -1,6 +1,6 @@
 # SRC — Student Representative Council site
 
-Announcements, comments and embedded forms for the SRC. Firebase only:
+Announcements, comments, embedded forms and an events calendar with sign-ups for the SRC. Firebase only:
 Hosting + Auth + Firestore + Cloud Functions. No AI, no second platform, no custom domain
 for the site itself.
 
@@ -473,12 +473,12 @@ npm run test:e2e      # browser end-to-end (needs `npm run emul` running)
 
 | Suite | Count | What it covers |
 |---|---|---|
-| `tests/rules.test.js` | 48 | Security rules, adversarially |
+| `tests/rules.test.js` | 64 | Security rules, adversarially (incl. events + sign-ups) |
 | `tests/emails.test.js` | 19 | Address normalising and paste parsing |
 | `tests/functions.test.js` | 24 | Email templates, batching, retry caps, idempotency |
-| `tests/e2e.mjs` | 37 | Real browser, real magic-link sign-in, full flows |
+| `tests/e2e.mjs` | 46 | Real browser, real magic-link sign-in, full flows incl. calendar |
 
-**128 tests, all passing.**
+**178 tests, all passing.**
 
 ---
 
