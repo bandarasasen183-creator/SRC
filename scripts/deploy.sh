@@ -63,11 +63,48 @@ if [ -z "$CURRENT" ] || [ "$CURRENT" = "demo-src" ]; then
   if [ "$CURRENT" = "demo-src" ]; then
     warn "'demo-src' is the local emulator placeholder, not a real project."
   fi
+  # Fetch the project list as JSON so we can resolve whatever the user types
+  # back to a real projectId. This matters: `firebase use` also accepts a
+  # project NUMBER, so a number would validate fine here and then poison
+  # SITE_URL and the APP_URL baked into email links.
+  PROJECTS_JSON="$($FIREBASE projects:list --json 2>/dev/null || true)"
+
   echo "Your Firebase projects:"
-  $FIREBASE projects:list || true
+  if [ -n "$PROJECTS_JSON" ]; then
+    printf '%s' "$PROJECTS_JSON" | node -e "
+      let raw=''; process.stdin.on('data',d=>raw+=d).on('end',()=>{
+        let list=[]; try { list = (JSON.parse(raw).result)||[]; } catch {}
+        const w = Math.max(10, ...list.map(p => p.projectId.length));
+        for (const p of list) {
+          console.log('  ' + p.projectId.padEnd(w) + '   ' + (p.displayName||''));
+        }
+      });"
+    echo
+    warn "Use the left-hand column (the project ID), not the number or the name."
+  else
+    $FIREBASE projects:list || true
+    echo
+    warn "Copy an ID from the 'Project ID' column above."
+  fi
   echo
-  warn "Copy an ID from the 'Project ID' column above — not the display name."
-  echo
+
+  # Resolve an entered token to a canonical projectId. Accepts the id, the
+  # project number, or the display name — and tells the user when it corrects
+  # them, so the mapping is never silent.
+  resolve_project() {
+    printf '%s' "$PROJECTS_JSON" | node -e "
+      const want = process.argv[1].trim().toLowerCase();
+      let raw=''; process.stdin.on('data',d=>raw+=d).on('end',()=>{
+        let list=[]; try { list=(JSON.parse(raw).result)||[]; } catch { process.exit(2); }
+        if (!list.length) process.exit(2);
+        const n = s => String(s ?? '').trim().toLowerCase();
+        const hit = list.find(p => n(p.projectId) === want)
+                 || list.find(p => n(p.projectNumber) === want)
+                 || list.find(p => n(p.displayName) === want);
+        if (!hit) process.exit(1);
+        console.log(hit.projectId);
+      });" "$1" 2>/dev/null
+  }
 
   # Re-prompt on a bad ID rather than dying, so a typo doesn't mean starting
   # the whole script again.
@@ -78,13 +115,34 @@ if [ -z "$CURRENT" ] || [ "$CURRENT" = "demo-src" ]; then
 
     if [ -z "$ENTERED" ]; then
       err "Nothing entered."
-    elif $FIREBASE use --add "$ENTERED" >/dev/null 2>&1 || $FIREBASE use "$ENTERED" >/dev/null 2>&1; then
-      PROJECT_ID="$ENTERED"
-      break
+      [ "$attempt" -lt 3 ] && echo
+      continue
+    fi
+
+    RESOLVED="$(resolve_project "$ENTERED")"
+    RC=$?
+
+    if [ $RC -eq 2 ]; then
+      # Couldn't read the project list; fall back to asking the CLI directly.
+      RESOLVED="$ENTERED"
+      if ! ($FIREBASE use --add "$ENTERED" >/dev/null 2>&1 || $FIREBASE use "$ENTERED" >/dev/null 2>&1); then
+        RESOLVED=""
+      fi
+    fi
+
+    if [ -n "$RESOLVED" ]; then
+      if [ "$RESOLVED" != "$ENTERED" ]; then
+        warn "'$ENTERED' is the project number/name — using project ID '$RESOLVED'."
+      fi
+      if $FIREBASE use --add "$RESOLVED" >/dev/null 2>&1 || $FIREBASE use "$RESOLVED" >/dev/null 2>&1; then
+        PROJECT_ID="$RESOLVED"
+        break
+      fi
+      err "Could not select '$RESOLVED'."
     else
       err "'$ENTERED' isn't a project you can access."
-      echo "   Check the spelling against the Project ID column above."
-      echo "   No SRC project in that list? Create one at"
+      echo "   Check it against the list above."
+      echo "   No SRC project there? Create one at"
       echo "   https://console.firebase.google.com, then re-run this script."
     fi
     [ "$attempt" -lt 3 ] && echo
@@ -97,6 +155,14 @@ if [ -z "$CURRENT" ] || [ "$CURRENT" = "demo-src" ]; then
 else
   PROJECT_ID="$CURRENT"
 fi
+
+# A project ID is never all digits. If we still have one, we'd generate a
+# wrong site URL and wrong email links, so refuse rather than ship that.
+case "$PROJECT_ID" in
+  ''|*[!0-9]*) : ;;
+  *) err "'$PROJECT_ID' is a project number, not a project ID. Re-run and use the ID."
+     exit 1 ;;
+esac
 green "Deploying to: $PROJECT_ID"
 SITE_URL="https://${PROJECT_ID}.web.app"
 
@@ -110,11 +176,31 @@ green "dependencies ready"
 # ---- 5. test before shipping ------------------------------------------------
 
 step "Running tests before deploying"
-if npm run test:unit --silent && npm run test:rules --silent; then
-  green "tests passed"
+
+if npm run test:unit --silent; then
+  green "unit tests passed"
 else
-  err "Tests failed. Not deploying."
+  err "Unit tests failed. Not deploying."
   exit 1
+fi
+
+# The rules tests drive the Firestore emulator, which is a Java program.
+# Missing Java is a local tooling gap, not a reason to block a deploy — the
+# rules are enforced by Firestore's servers regardless of whether we can
+# exercise them on this machine.
+if java -version >/dev/null 2>&1; then
+  if npm run test:rules --silent; then
+    green "security rules tests passed"
+  else
+    err "Security rules tests FAILED. Not deploying — this is the one suite"
+    err "worth blocking on, since it guards student data."
+    exit 1
+  fi
+else
+  warn "Java not found, so the security rules tests were skipped."
+  echo "   The emulator that runs them is a Java program. The rules themselves"
+  echo "   still deploy and are enforced by Firestore's servers either way."
+  echo "   To run them locally:  brew install --cask temurin && npm run test:rules"
 fi
 
 # ---- 6. rules + hosting -----------------------------------------------------
