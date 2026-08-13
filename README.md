@@ -92,33 +92,64 @@ cannot read or write.
 
 ---
 
-## 3. Which email provider, and why — Brevo
+## 3. Email provider — Resend (your call), with one real limit
 
-| Provider | Free tier | Daily cap | Verdict |
+You supplied a Resend key, so the code ships configured for **Resend**. Switching providers is
+a one-line config change (`EMAIL_PROVIDER`), not a code change — which matters, because of this:
+
+| Provider | Per month | **Per day** | At 50 students |
 |---|---|---|---|
-| **Brevo** | **~9,000/mo (300/day)** | 300/day | **Chosen** |
-| Resend | 3,000/mo | 100/day | Daily cap only allows 2 announcements/day at 50 students |
-| MailerSend | 500/mo (cut from 3,000 in Oct 2025) | — | Too small now |
+| **Resend** (configured) | 3,000 | **100** | **2 announcements/day** |
+| Brevo (supported, not active) | ~9,000 | 300 | 6 announcements/day |
 
-With 50 students, one announcement = 50 emails. Brevo's 300/day is **6 announcements a day**;
-Resend's 100/day would cap you at 2. Brevo also gives full transactional API access on the free
-tier with no card. That's the one.
+**The daily cap is the binding constraint, not the monthly one.** 50 students × 1 announcement
+= 50 emails, so you get two mailouts a day. Three fails.
 
-Sources: [Brevo pricing](https://www.brevo.com/pricing/),
-[Brevo email API](https://www.brevo.com/features/email-api/),
-[2026 comparison](https://www.emailtooltester.com/en/blog/best-transactional-email-service/),
-[free tier roundup](https://www.sender.net/blog/transactional-email-services/).
+The one that will actually catch you out: **bulk-inviting 50 students spends 50 of your 100
+emails for that day.** If you invite the cohort and post an announcement the same afternoon,
+you're at exactly 100. Invite in the morning, post the next day. Or split the invites across
+two days.
 
-### What to sign up for — YOU DO THIS
+Resend's free tier also gives you **1 domain and 1 API key**, which is enough here.
 
-1. Create a free account at **brevo.com**. No card needed.
-2. **Senders, Domains & Dedicated IPs → Domains → Add a domain** → `src.recallschool.com`
+Sources: [Resend quotas & limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits),
+[Resend free tier](https://resend.com/blog/new-free-tier),
+[batch endpoint](https://resend.com/docs/api-reference/emails/send-batch-emails).
+
+### How the code handles it
+
+- **Batch endpoint.** All 50 students go out in **one API request** (Resend batches up to 100
+  per call, and one call counts as one request against the rate limit). Verified by test.
+- **Batch-failure fallback.** If a batch is rejected as a unit — one malformed address can do
+  that — the chunk is automatically retried **one at a time**, so a single typo costs only that
+  student their email instead of all 50 theirs. Verified by test.
+- **Daily quota is reported, not swallowed.** A 429 mentioning the daily quota is flagged
+  distinctly from a per-second rate limit, and the teacher who posted sees
+  *"Hit the email provider's daily limit. Students can still read this in the app."* on their
+  own announcement. They are never left guessing whether it went out.
+
+### If you outgrow 100/day
+
+Sign up at brevo.com, then:
+
+```bash
+firebase functions:secrets:set EMAIL_API_KEY      # paste the Brevo key
+echo "EMAIL_PROVIDER=brevo" >> functions/.env
+firebase deploy --only functions
+```
+
+Both transports are implemented and tested. Nothing else changes.
+
+### Verify your sending domain — YOU DO THIS
+
+1. Resend dashboard → **Domains → Add Domain** → `src.recallschool.com`
    (the subdomain, **not** `recallschool.com` — see §5).
-3. Brevo shows you DKIM/SPF/DMARC records. Add them in Cloudflare (§5).
-4. **SMTP & API → API Keys → Generate a new API key.** Copy it.
+2. Resend gives you DKIM/SPF records. Add them in Cloudflare (§5).
+3. Wait for the domain to show **Verified**.
 
-That key is the only thing I need from you, and it goes in a Firebase secret — never in the
-website's JavaScript.
+Until that domain is verified, sends from `src@src.recallschool.com` will be **rejected**.
+Resend only lets you send from `onboarding@resend.dev` (to your own address) before then, which
+is fine for a first smoke test but nothing more.
 
 ---
 
@@ -126,11 +157,13 @@ website's JavaScript.
 
 ```bash
 # The API key. Stored in Secret Manager, injected at runtime, never in client code.
-firebase functions:secrets:set BREVO_API_KEY
-# (paste the key when prompted)
+# Paste it at the prompt — do NOT put it in a file or a shell command,
+# where it ends up in your shell history.
+firebase functions:secrets:set EMAIL_API_KEY
 
 # Non-secret settings. Put these in functions/.env
 cat > functions/.env <<'EOF'
+EMAIL_PROVIDER=resend
 SENDER_EMAIL=src@src.recallschool.com
 SENDER_NAME=SRC
 APP_URL=https://your-project.web.app
@@ -159,19 +192,20 @@ In Cloudflare, on the `recallschool.com` zone, add what Brevo gives you. Set all
 
 | Type | Name | Value |
 |---|---|---|
-| TXT | `src` | `v=spf1 include:spf.brevo.com ~all` |
-| TXT | `mail._domainkey.src` | (the DKIM value Brevo shows you) |
+| TXT | `send.src` | `v=spf1 include:amazonses.com ~all` (Resend gives you the exact value) |
+| TXT | `resend._domainkey.src` | (the DKIM value Resend shows you) |
 | TXT | `_dmarc.src` | `v=DMARC1; p=none; rua=mailto:you@recallschool.com; pct=100` |
-| TXT | `src` | (Brevo's `brevo-code` ownership record) |
+| MX | `send.src` | `feedback-smtp.<region>.amazonses.com` priority 10 (Resend gives you this) |
 
 ### ⚠️ The SPF gotcha — this one bites people
 
-**A domain may have only ONE `v=spf1` TXT record.** Two SPF records is a hard failure — worse
-than having none. If you later add a second sender on `src.recallschool.com`, you must *merge*
-the includes into one record:
+**A domain may have only ONE `v=spf1` TXT record per name.** Two is a hard failure — worse than
+having none. Resend puts its SPF on the `send.src` subdomain, so it won't collide with anything
+you already have on `src`. But if you later add a second sender on the *same* name, you must
+*merge* the includes into one record:
 
 ```
-v=spf1 include:spf.brevo.com include:_spf.firebasemail.com ~all
+v=spf1 include:amazonses.com include:_spf.firebasemail.com ~all
 ```
 
 Not two separate records. Check with `dig +short TXT src.recallschool.com` — you should see
@@ -181,7 +215,7 @@ exactly one string starting `v=spf1`.
 
 Start at `p=none`. It monitors without rejecting anything, so a misconfiguration can't silently
 black-hole mail to students. Once you've watched the reports for a couple of weeks and see
-Brevo passing SPF+DKIM with alignment, tighten to `p=quarantine`. Don't start at `p=reject` —
+Resend passing SPF+DKIM with alignment, tighten to `p=quarantine`. Don't start at `p=reject` —
 if alignment is wrong you'll lose every message with no warning.
 
 ---
@@ -192,11 +226,11 @@ if alignment is wrong you'll lose every message with no warning.
 
 | Email | Sent by | From address |
 |---|---|---|
-| **Invitation** (teacher adds a student) | Cloud Function → Brevo | `src@src.recallschool.com` ✅ |
-| **Announcement notification** | Cloud Function → Brevo | `src@src.recallschool.com` ✅ |
+| **Invitation** (teacher adds a student) | Cloud Function → Resend | `src@src.recallschool.com` ✅ |
+| **Announcement notification** | Cloud Function → Resend | `src@src.recallschool.com` ✅ |
 | **Self-serve sign-in link** (student types their email on the login page) | Firebase Auth | `noreply@<project>.firebaseapp.com` ❌ |
 
-I deliberately route **invitations through Brevo** rather than through Firebase Auth. The
+I deliberately route **invitations through Resend** rather than through Firebase Auth. The
 Cloud Function generates the sign-in link with the Admin SDK
 (`generateSignInWithEmailLink`) and delivers it itself. That means the invitation — which is
 how almost every student will first arrive — already comes from your domain, with your SPF and
@@ -243,9 +277,9 @@ Do not import 50 students and hope. In order:
 2. **Add one friendly student**, ideally one sitting next to you so you can watch their phone.
    Confirm they get it, and ask them to check junk if not.
 3. **Post one test announcement** with notify on. Confirm both of you get "SRC update — …".
-4. **Check the Brevo dashboard** (Transactional → Logs). It shows delivered / soft bounce /
-   hard bounce / blocked per message. This is your ground truth — the app only knows whether
-   Brevo *accepted* the message, not whether the school *delivered* it.
+4. **Check the Resend dashboard** (Emails). It shows delivered / bounced / complained per
+   message. This is your ground truth — the app only knows whether Resend *accepted* the
+   message, not whether the school *delivered* it.
 5. Only then invite everyone.
 
 If step 1 or 2 lands in junk, that's your signal to do the IT request below **before** rolling
@@ -282,9 +316,8 @@ Inside a school mail system, an allowlist entry beats every other measure. Send 
 >
 > - **Sending address:** `src@src.recallschool.com`
 > - **Sending domain:** `src.recallschool.com`
-> - **Sending service:** Brevo (SMTP relay) — IP ranges published at
->   `https://help.brevo.com` under "Brevo IP addresses"
-> - **SPF:** `v=spf1 include:spf.brevo.com ~all` on `src.recallschool.com`
+> - **Sending service:** Resend (sends via Amazon SES infrastructure)
+> - **SPF:** `v=spf1 include:amazonses.com ~all` on `send.src.recallschool.com`
 > - **DKIM:** configured and passing on `src.recallschool.com`
 > - **DMARC:** published at `_dmarc.src.recallschool.com`
 >
@@ -372,7 +405,7 @@ PASS  second student cannot see the first student's answer in the UI
 - Links are restricted to `http(s)`; `javascript:` and `data:` URLs are dropped.
 - CSV export prefixes cells starting with `= + - @` to prevent spreadsheet formula injection
   from student-typed answers.
-- The Brevo key lives in Secret Manager and is only ever sent as a request header from the
+- The Resend key lives in Secret Manager and is only ever sent as a request header from the
   server. A unit test asserts it never appears in a message body.
 - `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff` on all responses.
 
@@ -402,7 +435,7 @@ to grow past that, add pagination rather than raising the limit.
 | **Runaway function retries** — the classic Blaze horror story | `retry: false` on the Firestore trigger. A failed mailout is recorded to `mailLog`, never retried by the platform. |
 | **A function that re-triggers itself** | The trigger fires on **create** only, and writes its bookkeeping to a **separate** `mailLog` collection. It does write `notifiedAt` back to the announcement, but that's an *update*, and updates don't fire an onCreate trigger. No loop is possible. |
 | **Instance fan-out under load** | `maxInstances: 3` on the trigger, `2` on the callable, plus a global cap. |
-| **Unbounded per-send retries** | Max 2 attempts. 4xx is never retried at all. |
+| **Unbounded per-send retries** | Max 2 attempts. 4xx is never retried at all. A batch failure falls back to individual sends once, not repeatedly. |
 | **Unbounded listeners** | One feed listener, `limit(50)`. Comment listeners attach only to the thread you expand and detach when you collapse it. No listener-per-card. |
 | **Unbounded recipient lists** | Hard cap of 400 per mailout; anything beyond is logged, not silently dropped. |
 | **A teacher pasting 10,000 addresses** | UI caps a single add at 300; the callable rejects more than 400. |
@@ -455,10 +488,12 @@ npm run test:e2e      # browser end-to-end (needs `npm run emul` running)
 Google token in my environment returned 401. Everything is deploy-ready and tested against the
 emulator suite, but §2 is genuinely yours to run. It should take about ten minutes.
 
-**I could not send a single real email.** No Brevo account, no API key. The provider integration
-is unit-tested against a mocked Brevo API (batching, retry caps, header placement, templates),
-and the functions load cleanly, but **the first real send will be yours** — which is exactly
-why §7 says test on one address first.
+**I could not send a single real email, and I could not validate your Resend key.**
+`api.resend.com` is blocked by the network egress proxy in the environment I built this in, so
+even a read-only key check returned nothing. The integration is unit-tested against a mocked
+Resend API — batch endpoint, 100-per-call chunking, batch-failure fallback, retry caps, daily
+quota detection, header placement — and the functions load cleanly. But **the first real send
+will be yours**, which is exactly why §7 says test on one address first.
 
 **I could not verify the Firebase Auth custom-domain plan requirement** — the docs page is
 blocked from my environment. See §6; the console answers it in thirty seconds.

@@ -1,11 +1,9 @@
-// Brevo transactional email client + templates.
+// Transactional email: provider transports + message templates.
 //
-// Why Brevo: its free tier is 300 emails/day (~9,000/month) with full
-// transactional API access and no card. At 50 students that is 6 announcements
-// a day. Resend's free tier caps at 100/day (2 announcements), and MailerSend
-// cut its free tier to 500/month in late 2025. See README for the comparison.
-
-const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
+// Provider is selected by the EMAIL_PROVIDER param ('resend' by default).
+// Both transports present the same sendMany() interface, so switching is a
+// config change, not a code change — which matters here, because Resend's
+// free tier caps at 100 emails/DAY and you may outgrow it (see README §3).
 
 /** Escape for safe interpolation into the HTML email body. */
 export function esc(s) {
@@ -25,85 +23,193 @@ export function bodyExtract(text, max = 320) {
   return plain.length > max ? plain.slice(0, max - 1).trimEnd() + '…' : plain;
 }
 
-/**
- * Send one transactional email through Brevo.
- * Throws on non-2xx so the caller can record the failure.
- */
-export async function sendOne({ apiKey, sender, to, subject, html, text, timeoutMs = 15000 }) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function fromHeader(sender) {
+  return sender.name ? `${sender.name} <${sender.email}>` : sender.email;
+}
+
+async function postJson(url, headers, body, timeoutMs = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(BREVO_ENDPOINT, {
+    const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'api-key': apiKey,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify({
-        sender,
-        to: [{ email: to }],
-        subject,
-        htmlContent: html,
-        textContent: text,
-      }),
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      const err = new Error(`Brevo ${res.status}: ${detail.slice(0, 300)}`);
+      const err = new Error(`${res.status}: ${detail.slice(0, 300)}`);
       err.status = res.status;
+      // Resend returns 429 both for the per-second rate limit and for the
+      // daily quota. Surface the daily case distinctly — a teacher needs to
+      // know "we're out of emails today", not "try again in a second".
+      if (res.status === 429 && /daily|quota/i.test(detail)) err.dailyQuota = true;
       throw err;
     }
-    return true;
+    return res.json().catch(() => ({}));
   } finally {
     clearTimeout(timer);
   }
 }
 
-/**
- * Send to many recipients with bounded concurrency and a pause between
- * batches, so we never fire 50 simultaneous requests at the provider.
- * Never throws — returns a per-address outcome.
- */
-export async function sendMany(recipients, buildMessage, {
-  apiKey, sender, batchSize = 8, pauseMs = 400, maxAttempts = 2,
-}) {
-  const sent = [];
-  const failed = [];
+/* =============================================================================
+   Resend
+   ========================================================================== */
 
-  for (let i = 0; i < recipients.length; i += batchSize) {
-    const batch = recipients.slice(i, i + batchSize);
+const RESEND_SEND = 'https://api.resend.com/emails';
+const RESEND_BATCH = 'https://api.resend.com/emails/batch';
 
-    await Promise.all(batch.map(async (r) => {
-      const msg = buildMessage(r);
-      // Bounded retries. A 4xx is a permanent error (bad address, bad key)
-      // and is never retried — retrying those is what burns quota and
-      // reputation for no benefit.
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          await sendOne({ apiKey, sender, to: r.email, ...msg });
-          sent.push(r.email);
-          return;
-        } catch (e) {
-          const permanent = e.status >= 400 && e.status < 500 && e.status !== 429;
-          if (permanent || attempt === maxAttempts) {
-            failed.push({ email: r.email, error: String(e.message || e).slice(0, 200) });
-            return;
-          }
-          await new Promise((res) => setTimeout(res, 500 * attempt));
-        }
-      }
-    }));
+/** Resend's batch endpoint takes up to 100 messages and costs ONE rate unit. */
+const RESEND_BATCH_MAX = 100;
 
-    if (i + batchSize < recipients.length) {
-      await new Promise((res) => setTimeout(res, pauseMs));
-    }
-  }
-  return { sent, failed };
+function resendPayload(from, to, msg) {
+  return { from, to: [to], subject: msg.subject, html: msg.html, text: msg.text };
 }
 
-/* ---- templates ----------------------------------------------------------- */
+const resendTransport = {
+  name: 'resend',
+  // Resend's documented default is 2 requests/second. One batch call covers
+  // 100 recipients, so 50 students is a single request.
+  batchSize: RESEND_BATCH_MAX,
+  pauseMs: 600,
+
+  async sendChunk({ apiKey, sender, chunk, buildMessage }) {
+    const from = fromHeader(sender);
+    const headers = { authorization: `Bearer ${apiKey}` };
+    const payload = chunk.map((r) => resendPayload(from, r.email, buildMessage(r)));
+
+    await postJson(RESEND_BATCH, headers, payload);
+    return chunk.map((r) => r.email);
+  },
+
+  async sendSingle({ apiKey, sender, recipient, buildMessage }) {
+    const from = fromHeader(sender);
+    const headers = { authorization: `Bearer ${apiKey}` };
+    await postJson(RESEND_SEND, headers, resendPayload(from, recipient.email, buildMessage(recipient)));
+  },
+};
+
+/* =============================================================================
+   Brevo (kept as a drop-in alternative — 300/day vs Resend's 100/day)
+   ========================================================================== */
+
+const BREVO_SEND = 'https://api.brevo.com/v3/smtp/email';
+
+const brevoTransport = {
+  name: 'brevo',
+  batchSize: 8,      // Brevo has no batch endpoint; send individually
+  pauseMs: 400,
+
+  async sendChunk({ apiKey, sender, chunk, buildMessage }) {
+    // No batch endpoint — signal that the caller should send individually.
+    throw Object.assign(new Error('no batch endpoint'), { noBatch: true });
+  },
+
+  async sendSingle({ apiKey, sender, recipient, buildMessage }) {
+    const msg = buildMessage(recipient);
+    await postJson(BREVO_SEND, { 'api-key': apiKey, accept: 'application/json' }, {
+      sender,
+      to: [{ email: recipient.email }],
+      subject: msg.subject,
+      htmlContent: msg.html,
+      textContent: msg.text,
+    });
+  },
+};
+
+export const TRANSPORTS = { resend: resendTransport, brevo: brevoTransport };
+
+export function getTransport(name) {
+  const t = TRANSPORTS[String(name || 'resend').toLowerCase()];
+  if (!t) throw new Error(`Unknown email provider: ${name}`);
+  return t;
+}
+
+/* =============================================================================
+   sendMany — the one interface the functions use
+   ========================================================================== */
+
+const isPermanent = (e) => e.status >= 400 && e.status < 500 && e.status !== 429;
+
+/**
+ * Deliver `buildMessage(recipient)` to every recipient.
+ *
+ * Never throws. Returns { sent: [email], failed: [{email, error}], dailyQuota }.
+ *
+ * Where the provider supports batching (Resend), a chunk goes out in one
+ * request. If that request fails, the chunk is retried ONE AT A TIME so a
+ * single malformed address costs only itself instead of taking the whole
+ * mailout down with it.
+ */
+export async function sendMany(recipients, buildMessage, {
+  apiKey, sender, provider = 'resend', maxAttempts = 2,
+  batchSize: batchSizeOverride, pauseMs: pauseOverride,
+} = {}) {
+  const transport = getTransport(provider);
+  const batchSize = batchSizeOverride ?? transport.batchSize;
+  const pauseMs = pauseOverride ?? transport.pauseMs;
+
+  const sent = [];
+  const failed = [];
+  let dailyQuota = false;
+
+  const sendOneWithRetry = async (r) => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await transport.sendSingle({ apiKey, sender, recipient: r, buildMessage });
+        sent.push(r.email);
+        return;
+      } catch (e) {
+        if (e.dailyQuota) dailyQuota = true;
+        // A 4xx is a permanent error (bad address, bad key). Retrying those
+        // burns quota and reputation for no benefit.
+        if (isPermanent(e) || attempt === maxAttempts) {
+          failed.push({ email: r.email, error: String(e.message || e).slice(0, 200) });
+          return;
+        }
+        await sleep(500 * attempt);
+      }
+    }
+  };
+
+  for (let i = 0; i < recipients.length; i += batchSize) {
+    const chunk = recipients.slice(i, i + batchSize);
+    let batched = false;
+
+    try {
+      const ok = await transport.sendChunk({ apiKey, sender, chunk, buildMessage });
+      sent.push(...ok);
+      batched = true;
+    } catch (e) {
+      if (e.dailyQuota) dailyQuota = true;
+      if (!e.noBatch) {
+        // Batch failed as a unit — fall back so one bad address doesn't
+        // silently cost the other 49 theirs.
+        console.warn(`batch of ${chunk.length} failed (${e.message}); retrying individually`);
+      }
+    }
+
+    if (!batched) {
+      // Bounded concurrency: never fire the whole chunk simultaneously.
+      const lane = Math.min(8, chunk.length);
+      for (let j = 0; j < chunk.length; j += lane) {
+        await Promise.all(chunk.slice(j, j + lane).map(sendOneWithRetry));
+        if (j + lane < chunk.length) await sleep(pauseMs);
+      }
+    }
+
+    if (i + batchSize < recipients.length) await sleep(pauseMs);
+  }
+
+  return { sent, failed, dailyQuota };
+}
+
+/* =============================================================================
+   Templates
+   ========================================================================== */
 
 const SHELL = (inner) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -122,7 +228,7 @@ ${inner}
 </body></html>`;
 
 /** Announcement notification. Subject is always "SRC update …". */
-export function announcementEmail({ title, body, appUrl, announcementId, hasForm }) {
+export function announcementEmail({ title, body, appUrl, hasForm }) {
   const link = `${appUrl}/#/feed`;
   const extract = bodyExtract(body);
 

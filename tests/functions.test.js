@@ -8,7 +8,7 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  sendMany, sendOne, announcementEmail, inviteEmail, bodyExtract,
+  sendMany, announcementEmail, inviteEmail, bodyExtract, getTransport,
 } from '../functions/email.js';
 
 /* ---- fetch mock ---------------------------------------------------------- */
@@ -18,15 +18,25 @@ let responder = () => ({ ok: true, status: 201 });
 
 const realFetch = globalThis.fetch;
 
+// Understands both shapes: Resend's batch array, Resend/Brevo single objects.
+function recipientsOf(body) {
+  if (Array.isArray(body)) return body.flatMap((m) => m.to);
+  if (Array.isArray(body.to)) {
+    return body.to.map((t) => (typeof t === 'string' ? t : t.email));
+  }
+  return [];
+}
+
 const recordingFetch = async (url, opts) => {
   const body = JSON.parse(opts.body);
-  calls.push({ url, at: Date.now(), to: body.to[0].email, headers: opts.headers, body });
-  const r = responder(body);
+  const to = recipientsOf(body);
+  calls.push({ url, at: Date.now(), to, count: to.length, headers: opts.headers, body });
+  const r = responder(body, to);
   return {
     ok: r.ok,
     status: r.status,
     text: async () => r.text ?? '',
-    json: async () => ({}),
+    json: async () => r.json ?? {},
   };
 };
 
@@ -134,85 +144,134 @@ describe('bodyExtract', () => {
 
 /* ---- batching and rate limiting ------------------------------------------ */
 
-describe('sendMany', () => {
-  test('sends to everyone', async () => {
-    const { sent, failed } = await sendMany(people(50), msg, {
-      apiKey: 'k', sender: { email: 'a@b.c' }, batchSize: 8, pauseMs: 1,
-    });
+describe('sendMany — Resend transport', () => {
+  const opts = { apiKey: 'k', sender: { email: 'src@src.recallschool.com', name: 'SRC' }, provider: 'resend' };
+
+  test('50 students go out in ONE batch request', async () => {
+    const { sent, failed } = await sendMany(people(50), msg, opts);
     assert.equal(sent.length, 50);
     assert.equal(failed.length, 0);
-    assert.equal(calls.length, 50);
+    assert.equal(calls.length, 1, `expected 1 batch call, got ${calls.length}`);
+    assert.ok(calls[0].url.endsWith('/emails/batch'));
+    assert.equal(calls[0].count, 50);
   });
 
-  test('never fires all 50 requests simultaneously', async () => {
-    let inFlight = 0, peak = 0;
-    globalThis.fetch = async (url, opts) => {
-      inFlight++; peak = Math.max(peak, inFlight);
-      await new Promise((r) => setTimeout(r, 10));
-      inFlight--;
-      return { ok: true, status: 201, text: async () => '', json: async () => ({}) };
-    };
-    await sendMany(people(50), msg, {
-      apiKey: 'k', sender: { email: 'a@b.c' }, batchSize: 8, pauseMs: 1,
-    });
-    assert.ok(peak <= 8, `peak concurrency was ${peak}, expected <= 8`);
+  test('chunks at 100, which is Resend\'s batch maximum', async () => {
+    await sendMany(people(250), msg, opts);
+    assert.equal(calls.length, 3);
+    assert.deepEqual(calls.map((c) => c.count), [100, 100, 50]);
   });
 
-  test('pauses between batches so the provider is not hammered', async () => {
-    const started = Date.now();
-    await sendMany(people(24), msg, {
-      apiKey: 'k', sender: { email: 'a@b.c' }, batchSize: 8, pauseMs: 60,
-    });
-    // 3 batches => 2 pauses => at least ~120ms
-    assert.ok(Date.now() - started >= 110, `finished too fast: ${Date.now() - started}ms`);
-  });
-
-  test('sends the API key as a header, never in the message body', async () => {
-    await sendMany(people(1), msg, { apiKey: 'SECRET_KEY', sender: { email: 'a@b.c' }, pauseMs: 1 });
-    assert.equal(calls[0].headers['api-key'], 'SECRET_KEY');
+  test('uses a Bearer token header, never the key in the body', async () => {
+    await sendMany(people(3), msg, { ...opts, apiKey: 'SECRET_KEY' });
+    assert.equal(calls[0].headers.authorization, 'Bearer SECRET_KEY');
     assert.ok(!JSON.stringify(calls[0].body).includes('SECRET_KEY'));
   });
 
-  test('one bad address does not stop the rest', async () => {
-    responder = (body) => body.to[0].email === 's3@education.nsw.gov.au'
-      ? { ok: false, status: 400, text: 'invalid recipient' }
-      : { ok: true, status: 201 };
-    const { sent, failed } = await sendMany(people(10), msg, {
-      apiKey: 'k', sender: { email: 'a@b.c' }, batchSize: 4, pauseMs: 1,
-    });
-    assert.equal(sent.length, 9);
+  test('sends a properly formatted From with the display name', async () => {
+    await sendMany(people(1), msg, opts);
+    assert.equal(calls[0].body[0].from, 'SRC <src@src.recallschool.com>');
+  });
+
+  test('a failed batch falls back to individual sends, so one bad address only costs itself', async () => {
+    let first = true;
+    responder = (body, to) => {
+      if (Array.isArray(body) && first) { first = false; return { ok: false, status: 422, text: 'invalid `to` field' }; }
+      if (to.includes('s3@education.nsw.gov.au')) return { ok: false, status: 422, text: 'invalid recipient' };
+      return { ok: true, status: 200 };
+    };
+    const { sent, failed } = await sendMany(people(10), msg, opts);
+    assert.equal(sent.length, 9, `expected 9 delivered, got ${sent.length}`);
     assert.equal(failed.length, 1);
     assert.equal(failed[0].email, 's3@education.nsw.gov.au');
   });
 
-  test('a 4xx is NOT retried (retrying a bad address wastes quota)', async () => {
-    responder = () => ({ ok: false, status: 400, text: 'bad address' });
-    await sendMany(people(1), msg, { apiKey: 'k', sender: { email: 'a@b.c' }, pauseMs: 1, maxAttempts: 3 });
-    assert.equal(calls.length, 1, `expected 1 attempt, got ${calls.length}`);
+  test('individual fallback never fires all requests at once', async () => {
+    let inFlight = 0, peak = 0, firstBatch = true;
+    globalThis.fetch = async (url, o) => {
+      const body = JSON.parse(o.body);
+      if (Array.isArray(body) && firstBatch) { firstBatch = false; return { ok: false, status: 500, text: async () => 'boom', json: async () => ({}) }; }
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight--;
+      return { ok: true, status: 200, text: async () => '', json: async () => ({}) };
+    };
+    await sendMany(people(40), msg, { ...opts, pauseMs: 1 });
+    assert.ok(peak <= 8, `peak concurrency was ${peak}, expected <= 8`);
+  });
+
+  test('a 4xx is NOT retried on the individual path', async () => {
+    responder = (body) => Array.isArray(body)
+      ? { ok: false, status: 422, text: 'bad batch' }
+      : { ok: false, status: 422, text: 'bad address' };
+    await sendMany(people(1), msg, { ...opts, maxAttempts: 3, pauseMs: 1 });
+    // 1 batch attempt + exactly 1 individual attempt (no retry on 4xx)
+    assert.equal(calls.length, 2, `expected 2 calls, got ${calls.length}`);
   });
 
   test('a 5xx IS retried, but only up to maxAttempts', async () => {
     responder = () => ({ ok: false, status: 503, text: 'upstream down' });
-    const { failed } = await sendMany(people(1), msg, {
-      apiKey: 'k', sender: { email: 'a@b.c' }, pauseMs: 1, maxAttempts: 2,
-    });
-    assert.equal(calls.length, 2, `expected exactly 2 attempts, got ${calls.length}`);
+    const { failed } = await sendMany(people(1), msg, { ...opts, maxAttempts: 2, pauseMs: 1 });
+    // 1 batch + 2 individual attempts
+    assert.equal(calls.length, 3, `expected 3 calls, got ${calls.length}`);
     assert.equal(failed.length, 1);
   });
 
-  test('a 429 is treated as retryable, not permanent', async () => {
-    responder = () => ({ ok: false, status: 429, text: 'rate limited' });
-    await sendMany(people(1), msg, { apiKey: 'k', sender: { email: 'a@b.c' }, pauseMs: 1, maxAttempts: 2 });
-    assert.equal(calls.length, 2);
+  test('flags the daily quota distinctly from a per-second rate limit', async () => {
+    responder = () => ({ ok: false, status: 429, text: 'You have reached your daily quota' });
+    const r = await sendMany(people(2), msg, { ...opts, maxAttempts: 1, pauseMs: 1 });
+    assert.equal(r.dailyQuota, true, 'daily quota should be flagged so a teacher can be told');
+    assert.equal(r.sent.length, 0);
   });
 
-  test('never throws, even when every send fails', async () => {
+  test('a plain 429 is not mistaken for the daily quota', async () => {
+    responder = () => ({ ok: false, status: 429, text: 'Too many requests' });
+    const r = await sendMany(people(1), msg, { ...opts, maxAttempts: 1, pauseMs: 1 });
+    assert.equal(r.dailyQuota, false);
+  });
+
+  test('never throws, even when everything fails', async () => {
     responder = () => ({ ok: false, status: 500, text: 'boom' });
-    const res = await sendMany(people(5), msg, {
-      apiKey: 'k', sender: { email: 'a@b.c' }, pauseMs: 1, maxAttempts: 1,
-    });
-    assert.equal(res.sent.length, 0);
-    assert.equal(res.failed.length, 5);
+    const r = await sendMany(people(5), msg, { ...opts, maxAttempts: 1, pauseMs: 1 });
+    assert.equal(r.sent.length, 0);
+    assert.equal(r.failed.length, 5);
+  });
+});
+
+describe('sendMany — Brevo transport still works', () => {
+  const opts = { apiKey: 'k', sender: { email: 'src@src.recallschool.com', name: 'SRC' }, provider: 'brevo', pauseMs: 1 };
+
+  test('sends individually (Brevo has no batch endpoint)', async () => {
+    const { sent } = await sendMany(people(12), msg, opts);
+    assert.equal(sent.length, 12);
+    assert.equal(calls.length, 12);
+    assert.ok(calls[0].url.includes('brevo.com'));
+  });
+
+  test('uses the api-key header, not Bearer', async () => {
+    await sendMany(people(1), msg, { ...opts, apiKey: 'SECRET_KEY' });
+    assert.equal(calls[0].headers['api-key'], 'SECRET_KEY');
+  });
+
+  test('never fires all requests simultaneously', async () => {
+    let inFlight = 0, peak = 0;
+    globalThis.fetch = async () => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 8));
+      inFlight--;
+      return { ok: true, status: 201, text: async () => '', json: async () => ({}) };
+    };
+    await sendMany(people(50), msg, opts);
+    assert.ok(peak <= 8, `peak concurrency was ${peak}`);
+  });
+});
+
+describe('provider selection', () => {
+  test('defaults to resend', () => {
+    assert.equal(getTransport(undefined).name, 'resend');
+  });
+  test('rejects an unknown provider loudly', () => {
+    assert.throws(() => getTransport('sendgrid'), /Unknown email provider/);
   });
 });
 

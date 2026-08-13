@@ -31,8 +31,11 @@ const db = getFirestore();
 
 // ---- configuration ---------------------------------------------------------
 
-/** Brevo API key. A SECRET — never shipped to the browser. */
-const BREVO_API_KEY = defineSecret('BREVO_API_KEY');
+/** Transactional email provider API key. A SECRET — never in the browser. */
+const EMAIL_API_KEY = defineSecret('EMAIL_API_KEY');
+
+/** 'resend' (default) or 'brevo'. Switching providers is a config change. */
+const EMAIL_PROVIDER = defineString('EMAIL_PROVIDER', { default: 'resend' });
 
 /** e.g. "SRC <src@src.recallschool.com>" pieces. */
 const SENDER_EMAIL = defineString('SENDER_EMAIL', { default: 'src@src.recallschool.com' });
@@ -80,7 +83,7 @@ async function rosterRecipients() {
 export const onAnnouncementCreated = onDocumentCreated(
   {
     document: 'announcements/{announcementId}',
-    secrets: [BREVO_API_KEY],
+    secrets: [EMAIL_API_KEY],
     retry: false,            // never retry forever
     timeoutSeconds: 300,
     memory: '256MiB',
@@ -117,9 +120,9 @@ export const onAnnouncementCreated = onDocumentCreated(
       return;
     }
 
-    const key = BREVO_API_KEY.value();
+    const key = EMAIL_API_KEY.value();
     if (!key) {
-      logger.error('BREVO_API_KEY is not set — cannot send.');
+      logger.error('EMAIL_API_KEY is not set — cannot send.');
       await logRef.set({
         status: 'error', error: 'Email provider key not configured.',
         finishedAt: FieldValue.serverTimestamp(),
@@ -152,11 +155,10 @@ export const onAnnouncementCreated = onDocumentCreated(
         hasForm: !!data.formId,
       });
 
-      const { sent, failed } = await sendMany(recipients, () => msg, {
+      const { sent, failed, dailyQuota } = await sendMany(recipients, () => msg, {
         apiKey: key,
         sender: sender(),
-        batchSize: 8,
-        pauseMs: 400,
+        provider: EMAIL_PROVIDER.value(),
         maxAttempts: 2,
       });
 
@@ -178,8 +180,11 @@ export const onAnnouncementCreated = onDocumentCreated(
         sent: sent.length,
         failed: failed.length,
         capped,
+        dailyQuota,
         failedEmails: failed.slice(0, 25).map((f) => f.email),
-        error: failed.length ? failed[0].error : null,
+        error: dailyQuota
+          ? "Hit the email provider's daily limit. Students can still read this in the app."
+          : (failed.length ? failed[0].error : null),
         finishedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 
@@ -210,7 +215,7 @@ export const onAnnouncementCreated = onDocumentCreated(
 
 export const sendInvites = onCall(
   {
-    secrets: [BREVO_API_KEY],
+    secrets: [EMAIL_API_KEY],
     timeoutSeconds: 300,
     memory: '256MiB',
     maxInstances: 2,
@@ -238,10 +243,10 @@ export const sendInvites = onCall(
       throw new HttpsError('invalid-argument', `At most ${MAX_RECIPIENTS} at a time.`);
     }
 
-    const key = BREVO_API_KEY.value();
+    const key = EMAIL_API_KEY.value();
     if (!key) {
       throw new HttpsError('failed-precondition',
-        'Email provider key is not configured. Set the BREVO_API_KEY secret.');
+        'Email provider key is not configured. Set the EMAIL_API_KEY secret.');
     }
 
     // ---- only invite people actually on the roster ------------------------
@@ -274,10 +279,10 @@ export const sendInvites = onCall(
       }
     }
 
-    const { sent, failed } = await sendMany(
+    const { sent, failed, dailyQuota } = await sendMany(
       withLinks,
       (r) => inviteEmail({ signInLink: r.signInLink, appUrl: base, invitedBy }),
-      { apiKey: key, sender: sender(), batchSize: 8, pauseMs: 400, maxAttempts: 2 }
+      { apiKey: key, sender: sender(), provider: EMAIL_PROVIDER.value(), maxAttempts: 2 }
     );
 
     const allFailed = [...failed, ...linkFailures];
@@ -288,6 +293,7 @@ export const sendInvites = onCall(
       failed: allFailed.length,
       failedEmails: allFailed.slice(0, 25).map((f) => f.email),
       skipped: emails.length - onRoster.length,
+      dailyQuota,
     };
   }
 );

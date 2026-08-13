@@ -5,7 +5,7 @@
 #   bash scripts/deploy.sh
 #
 # Safe to re-run. It checks before it changes anything, runs the test suite
-# before shipping, and will not deploy the Cloud Functions until the Brevo
+# before shipping, and will not deploy the Cloud Functions until the email
 # secret exists (a function deployed without its key just fails at runtime).
 
 set -euo pipefail
@@ -100,14 +100,15 @@ green "Site is live: $SITE_URL"
 
 # ---- 7. functions (only if the secret exists) -------------------------------
 
-step "Checking the Brevo API key"
+step "Checking the email provider API key"
 
-if $FIREBASE functions:secrets:access BREVO_API_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
-  green "BREVO_API_KEY is set"
+if $FIREBASE functions:secrets:access EMAIL_API_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
+  green "EMAIL_API_KEY is set"
 
   if [ ! -f functions/.env ]; then
     warn "functions/.env is missing — creating it with defaults."
     cat > functions/.env <<EOF
+EMAIL_PROVIDER=resend
 SENDER_EMAIL=src@src.recallschool.com
 SENDER_NAME=SRC
 APP_URL=${SITE_URL}
@@ -119,13 +120,16 @@ EOF
   $FIREBASE deploy --only functions --project "$PROJECT_ID"
   green "functions deployed"
 else
-  warn "BREVO_API_KEY is not set, so the email functions were NOT deployed."
+  warn "EMAIL_API_KEY is not set, so the email functions were NOT deployed."
   echo
   echo "  The site works fine without them — students just won't get emails."
   echo "  To enable email:"
-  echo "    1. Sign up free at https://www.brevo.com and create an API key"
-  echo "    2. $FIREBASE functions:secrets:set BREVO_API_KEY --project $PROJECT_ID"
-  echo "    3. re-run this script"
+  echo "    1. Create an API key at https://resend.com (free)"
+  echo "    2. $FIREBASE functions:secrets:set EMAIL_API_KEY --project $PROJECT_ID"
+  echo "       (paste at the prompt — don't put the key in a shell command)"
+  echo "    3. Verify src.recallschool.com in the Resend dashboard, or sends"
+  echo "       from that address will be rejected. See README section 3."
+  echo "    4. re-run this script"
 fi
 
 # ---- 8. what's left ---------------------------------------------------------
@@ -152,4 +156,7 @@ echo "     \$5, alert at 50/90/100%. Blaze has no hard spending cap."
 echo
 echo "  5. Before inviting a cohort, email ONE address first and check where"
 echo "     it lands. README section 7."
+echo
+echo "  6. Resend free tier is 100 emails/DAY. Bulk-inviting 50 students uses"
+echo "     half of that in one go. Invite and announce on different days."
 echo
