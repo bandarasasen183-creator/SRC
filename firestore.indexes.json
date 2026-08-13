@@ -1,0 +1,5 @@
+{
+  "comment": "No composite indexes needed. The feed queries a single field (createdAt desc, limited to 50) and sorts pinned-first in the browser, which keeps this file — and the query cost — trivial.",
+  "indexes": [],
+  "fieldOverrides": []
+}

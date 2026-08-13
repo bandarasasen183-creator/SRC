@@ -1,0 +1,246 @@
+rules_version = '2';
+
+// =============================================================================
+// SRC app — Firestore security rules
+//
+// Threat model this is written against:
+//   * A signed-out stranger must be able to read NOTHING.
+//   * A signed-in student must not be able to read other students' form
+//     responses, must not be able to read the roster, and must not be able to
+//     promote themselves to teacher.
+//   * A student who is not on the roster gets no profile and therefore no data.
+//
+// Every rule below is exercised by tests/rules.test.js — including the
+// forbidden operations, which are asserted to FAIL.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ----------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // The signed-in user's profile document. Existence of this document is
+    // what makes someone a member of the SRC app at all; it is only created
+    // when the address is already on the roster (see /users rules).
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function isMember() {
+      return signedIn() && exists(profilePath());
+    }
+
+    function profile() {
+      return get(profilePath()).data;
+    }
+
+    function isTeacher() {
+      return isMember() && profile().role == 'teacher';
+    }
+
+    // Normalised email of the caller, straight from the verified auth token.
+    // Used so a user can only act on roster/request rows that are truly theirs.
+    function myEmail() {
+      return signedIn() && request.auth.token.email != null
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // Fields that changed between the stored doc and the incoming write.
+    function changed() {
+      return incoming().diff(existing()).affectedKeys();
+    }
+
+    function onlyChanged(allowed) {
+      return changed().hasOnly(allowed);
+    }
+
+    // ---- users ------------------------------------------------------------
+    // Profile documents. role lives here and is NOT self-writable.
+
+    match /users/{uid} {
+      // A user can read their own profile. Teachers can read everyone's
+      // (they need the roster cross-reference and comment attribution).
+      allow get: if signedIn() && (request.auth.uid == uid || isTeacher());
+      allow list: if isTeacher();
+
+      // First sign-in. Four independent conditions must all hold:
+      //   1. You can only create YOUR OWN profile document.
+      //   2. The email on the profile must match your verified token email.
+      //   3. Your address must already be on the roster (invited by a teacher).
+      //   4. The role must be exactly the role the teacher assigned on the
+      //      roster row. This is the anti-escalation check: a student cannot
+      //      hand themselves role:'teacher' at creation time, because the
+      //      value is compared against a roster document they cannot write.
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && incoming().email == myEmail()
+        && exists(/databases/$(database)/documents/roster/$(myEmail()))
+        && incoming().role == get(/databases/$(database)/documents/roster/$(myEmail())).data.role
+        && incoming().role in ['student', 'teacher']
+        && incoming().name is string
+        && incoming().name.size() >= 2
+        && incoming().name.size() <= 80
+        && incoming().yearClass is string
+        && incoming().yearClass.size() <= 40;
+
+      // Users may edit their own name/yearClass only. role and email are
+      // explicitly excluded from the allowed set, so a self-promotion write
+      // is rejected regardless of what else the payload contains.
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && onlyChanged(['name', 'yearClass', 'lastSeenAt'])
+        && incoming().name is string
+        && incoming().name.size() >= 2
+        && incoming().name.size() <= 80;
+
+      // Teachers can change roles and remove people.
+      allow update, delete: if isTeacher();
+    }
+
+    // ---- roster -----------------------------------------------------------
+    // Who has been invited. Students must never be able to read this — it is
+    // a list of every student's email address.
+
+    match /roster/{emailKey} {
+      allow read, write: if isTeacher();
+      // Note: students never read this collection. Their profile creation
+      // relies on exists()/get() above, which is evaluated server-side by the
+      // rules engine and does not require client read access.
+    }
+
+    // ---- access requests --------------------------------------------------
+    // A school address that was never invited can lodge one request.
+
+    match /accessRequests/{emailKey} {
+      allow get: if isTeacher() || (signedIn() && emailKey == myEmail());
+      allow list: if isTeacher();
+
+      // You may only create a request for your own verified address, and only
+      // if you are not already a member.
+      allow create: if signedIn()
+        && emailKey == myEmail()
+        && incoming().email == myEmail()
+        && !exists(profilePath())
+        && incoming().name is string
+        && incoming().name.size() >= 2
+        && incoming().name.size() <= 80;
+
+      allow update, delete: if isTeacher();
+    }
+
+    // ---- announcements ----------------------------------------------------
+
+    match /announcements/{id} {
+      allow get, list: if isMember();
+
+      allow create: if isTeacher()
+        && incoming().authorUid == request.auth.uid
+        && incoming().title is string
+        && incoming().title.size() > 0
+        && incoming().title.size() <= 200
+        && incoming().body is string
+        && incoming().body.size() <= 20000
+        // notifiedAt is owned by the Cloud Function (Admin SDK, bypasses
+        // rules). A client must never set it, or it could suppress or fake
+        // the notification bookkeeping.
+        && !('notifiedAt' in incoming());
+
+      // Teachers edit and delete their OWN announcements.
+      allow update: if isTeacher()
+        && existing().authorUid == request.auth.uid
+        && incoming().authorUid == existing().authorUid
+        && !changed().hasAny(['notifiedAt', 'createdAt']);
+
+      allow delete: if isTeacher() && existing().authorUid == request.auth.uid;
+
+      // ---- comments -------------------------------------------------------
+      match /comments/{commentId} {
+        function parent() {
+          return get(/databases/$(database)/documents/announcements/$(id)).data;
+        }
+
+        allow get, list: if isMember();
+
+        // Comments can only be created while the teacher has them open, and
+        // always under your own uid and your own real name from your profile.
+        allow create: if isMember()
+          && parent().commentsOpen == true
+          && incoming().authorUid == request.auth.uid
+          && incoming().authorName == profile().name
+          && incoming().text is string
+          && incoming().text.size() > 0
+          && incoming().text.size() <= 2000;
+
+        // Authors edit their own text only. Closing the thread freezes edits.
+        allow update: if isMember()
+          && existing().authorUid == request.auth.uid
+          && parent().commentsOpen == true
+          && onlyChanged(['text', 'editedAt'])
+          && incoming().text is string
+          && incoming().text.size() > 0
+          && incoming().text.size() <= 2000;
+
+        // Own comment, or any comment if you are a teacher (moderation).
+        allow delete: if isMember()
+          && (existing().authorUid == request.auth.uid || isTeacher());
+      }
+    }
+
+    // ---- forms ------------------------------------------------------------
+
+    match /forms/{formId} {
+      allow get, list: if isMember();
+      allow create, update, delete: if isTeacher();
+
+      // ---- responses ------------------------------------------------------
+      // THE critical privacy boundary. Document id is the responder's uid.
+      match /responses/{uid} {
+        function form() {
+          return get(/databases/$(database)/documents/forms/$(formId)).data;
+        }
+
+        // get and list are deliberately split. If they were merged into a
+        // single `read`, a student could LIST the whole responses collection,
+        // because `resource` is not bound during a list evaluation and the
+        // uid check would not constrain anything. Splitting them means a
+        // student can fetch exactly their own document and nothing else.
+        allow get: if isMember() && (request.auth.uid == uid || isTeacher());
+        allow list: if isTeacher();
+
+        allow create: if isMember()
+          && request.auth.uid == uid
+          && incoming().uid == request.auth.uid;
+
+        // Re-submission is only possible when the teacher allowed it.
+        allow update: if isMember()
+          && request.auth.uid == uid
+          && form().allowMultiple == true;
+
+        allow delete: if isTeacher();
+      }
+    }
+
+    // ---- mail log ---------------------------------------------------------
+    // Idempotency guard + failure record for the notification function.
+    // Written exclusively by the Cloud Function via the Admin SDK, which
+    // bypasses these rules. Teachers read it to see delivery failures.
+
+    match /mailLog/{id} {
+      allow get, list: if isTeacher();
+      allow write: if false;
+    }
+
+    // ---- default deny -----------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
