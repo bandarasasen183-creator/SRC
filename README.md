@@ -42,6 +42,19 @@ There is **no config file to fill in.** Firebase Hosting serves your project's w
 
 ## 2. Deploy it — YOU DO THIS
 
+**Quickest path — one command:**
+
+```bash
+bash scripts/deploy.sh
+```
+
+It checks your tooling, signs you in, asks which project, runs the tests, deploys rules +
+hosting, deploys the functions only if the Brevo key is set, and prints what's left to do.
+Safe to re-run.
+
+<details>
+<summary>Or do it by hand</summary>
+
 ```bash
 npm install
 cd functions && npm install && cd ..
@@ -52,6 +65,8 @@ firebase use --add            # pick your Firebase project, alias it "default"
 
 firebase deploy --only firestore:rules,hosting
 ```
+
+</details>
 
 That gets the site live at `https://<your-project>.web.app` with the rules enforced.
 Functions need the Brevo key first — see §4.
