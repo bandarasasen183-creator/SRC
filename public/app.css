@@ -398,7 +398,7 @@ tbody tr:hover { background: var(--hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
 
 /* ---- events calendar ----------------------------------------------------- */
@@ -453,3 +453,97 @@ tbody tr:hover { background: var(--hover); }
 .event-date .w { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 
 .auth-hero .hero-logo { display: flex; justify-content: center; margin-bottom: 16px; }
+
+/* ---- icons ---------------------------------------------------------------- */
+
+.ic { flex: none; }
+.btn .ic { margin: 0 -2px; }
+.pill .ic { width: 12px; height: 12px; }
+.tab { display: inline-flex; align-items: center; gap: 7px; }
+.meta .ic { width: 13px; height: 13px; vertical-align: -2px; }
+
+.hero-icon {
+  width: 60px; height: 60px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px; background: var(--brand-tint); color: var(--brand);
+}
+.hero-icon.warn { background: var(--warn-bg); color: var(--warn); }
+
+.icirc {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--brand-tint); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 12px;
+}
+
+/* ---- search --------------------------------------------------------------- */
+
+.searchbox {
+  display: flex; align-items: center; gap: 9px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--surface); padding: 0 12px; margin-bottom: 14px;
+  color: var(--text-muted);
+  transition: border-color .12s, box-shadow .12s;
+}
+.searchbox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--brand); }
+.searchbox input { border: 0 !important; box-shadow: none !important; padding: 10px 0; background: transparent; }
+
+.pill.new { background: var(--brand); color: var(--brand-text); }
+
+/* ---- response summaries ---------------------------------------------------- */
+
+.sumfield { margin: 0 0 16px; }
+.sumfield .lbl { font-weight: 600; font-size: .88rem; margin-bottom: 6px; display: block; }
+.sumrow { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: .85rem; }
+.sumrow .lab { flex: 0 0 36%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sumrow .bar { flex: 1; }
+.sumrow .n { flex: none; min-width: 2ch; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ---- motion ---------------------------------------------------------------- */
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes popIn { 0% { opacity: 0; transform: scale(.6); } 70% { transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes floaty { from { transform: translateY(-3px); } to { transform: translateY(3px); } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes dotpulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.55); opacity: .7; } }
+@keyframes waveL { from { transform: translateX(-3.5px); } to { transform: translateX(3.5px); } }
+
+#view > * { animation: fadeIn .22s ease; }
+
+.card { animation: fadeUp .32s ease backwards; }
+#feedList .card:nth-child(2) { animation-delay: .04s; }
+#feedList .card:nth-child(3) { animation-delay: .08s; }
+#feedList .card:nth-child(4) { animation-delay: .12s; }
+#feedList .card:nth-child(5) { animation-delay: .16s; }
+#feedList .card:nth-child(n+6) { animation-delay: .2s; }
+
+.event-row { animation: fadeUp .28s ease backwards; }
+.event-row:nth-child(2) { animation-delay: .04s; }
+.event-row:nth-child(3) { animation-delay: .08s; }
+.event-row:nth-child(4) { animation-delay: .12s; }
+.event-row:nth-child(n+5) { animation-delay: .16s; }
+
+.chip { animation: popIn .16s ease; }
+.note { animation: fadeUp .3s ease; }
+
+.btn { transition: background .12s ease, transform .09s ease, border-color .12s ease; }
+.btn:active:not(:disabled) { transform: scale(.95); }
+.tab { transition: color .15s, border-color .15s, background .15s; }
+
+.empty .icirc { animation: bob 2.8s ease-in-out infinite; }
+.cal-cell.has-ev .evdot { animation: dotpulse 2.2s ease-in-out infinite; }
+.cal-cell .num { transition: background .12s, transform .1s; }
+.cal-cell:active:not(.empty) .num { transform: scale(.88); display: inline-block; }
+
+/* The badge: pop in on the auth hero and float gently; waves drift always. */
+.hero-logo svg { animation: popIn .55s cubic-bezier(.2, 1.35, .4, 1) both, floaty 5s 1s ease-in-out infinite alternate; }
+.logo-badge .w1 { animation: waveL 4.2s ease-in-out infinite alternate; }
+.logo-badge .w2 { animation: waveL 5.1s .4s ease-in-out infinite alternate-reverse; }
+.logo-badge .w3 { animation: waveL 6s .8s ease-in-out infinite alternate; }
+.logo-badge .w4 { animation: waveL 5.4s .2s ease-in-out infinite alternate-reverse; }
+
+/* Logo: real artwork layered over the drawn SVG fallback. */
+.logo-wrap { position: relative; display: inline-flex; flex: none; }
+.logo-wrap > svg, .logo-wrap > .logo-img { width: 100%; height: 100%; display: block; }
+.logo-img { position: absolute; inset: 0; z-index: 1; object-fit: contain; }

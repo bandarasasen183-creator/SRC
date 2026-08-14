@@ -1,18 +1,156 @@
 // Small DOM + rendering helpers. No framework.
 
+const FONT = 'system-ui,Roboto,Arial,sans-serif';
+
+let logoCount = 0;
+
 /**
- * The SRC logo: a green tile with an announcement horn. Inline SVG so it is
- * crisp at any size and needs no image request.
+ * The SRC badge, redrawn as SVG from the official logo: green-to-teal circle,
+ * mountain silhouette, dotted waves, SRC wordmark. `full` adds the circular
+ * rim text (readable from ~96px up); the small variant drops it so the badge
+ * stays legible in the top bar and favicon.
+ *
+ * The wave rows carry classes w1–w4 so CSS can drift them like water.
  */
-export function logoSvg(size = 28) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" style="display:block;flex:none">
-    <rect width="48" height="48" rx="11" fill="#188038"/>
-    <g transform="translate(-1 0)">
-      <path fill="#fff" d="M14 19h6l10-7v24l-10-7h-6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"/>
-      <path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M33.5 19.5a6.5 6.5 0 0 1 0 9"/>
-      <path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M36.5 16a10.5 10.5 0 0 1 0 16"/>
+function drawnBadge(size = 28, { full = false } = {}) {
+  const u = `lg${++logoCount}`;
+  const R = full ? 79 : 90;
+
+  const rows = full
+    ? [
+        { y: 112, fill: '#ffffff', op: .95, ph: 0.0, cls: 'w1' },
+        { y: 124, fill: '#3fae66', op: .9, ph: 1.4, cls: 'w2' },
+        { y: 136, fill: '#ffffff', op: .95, ph: 2.2, cls: 'w3' },
+        { y: 148, fill: '#3fae66', op: .8, ph: 0.7, cls: 'w4' },
+      ]
+    : [
+        { y: 118, fill: '#ffffff', op: .95, ph: 0.0, cls: 'w1' },
+        { y: 132, fill: '#3fae66', op: .9, ph: 1.4, cls: 'w2' },
+        { y: 146, fill: '#ffffff', op: .95, ph: 2.2, cls: 'w3' },
+      ];
+  const dots = rows.map((row) => {
+    let c = '';
+    for (let x = 16; x <= 184; x += 11) {
+      const y = row.y + 6 * Math.sin(((x - 16) / 168) * Math.PI * 2.2 + row.ph);
+      c += `<circle cx="${x}" cy="${y.toFixed(1)}" r="${full ? 3.6 : 4.6}" fill="${row.fill}" opacity="${row.op}"/>`;
+    }
+    return `<g class="${row.cls}">${c}</g>`;
+  }).join('');
+
+  const rim = full ? `
+    <circle cx="100" cy="100" r="95.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".9"/>
+    <circle cx="100" cy="100" r="${R}" fill="none" stroke="#fff" stroke-width="2.4"/>
+    <defs>
+      <path id="${u}-top" d="M 20.2 85.9 A 81 81 0 0 1 179.8 85.9"/>
+      <path id="${u}-bot" d="M 14.3 115.1 A 87 87 0 0 0 185.7 115.1"/>
+    </defs>
+    <text font-family="${FONT}" font-size="11.5" font-weight="700" fill="#fff">
+      <textPath href="#${u}-top" startOffset="50%" text-anchor="middle" textLength="211" lengthAdjust="spacingAndGlyphs">STUDENT REPRESENTATIVE COUNCIL</textPath>
+    </text>
+    <text font-family="${FONT}" font-size="10.8" font-weight="700" fill="#fff">
+      <textPath href="#${u}-bot" startOffset="50%" text-anchor="middle" textLength="222" lengthAdjust="spacingAndGlyphs">LEADERSHIP · UNITY · REPRESENTATION</textPath>
+    </text>`
+    : `<circle cx="100" cy="100" r="${R}" fill="none" stroke="#fff" stroke-width="3"/>`;
+
+  const mtnBase = full ? 128 : 132;
+  const mtnBot = full ? 152 : 158;
+
+  return `<svg width="${size}" height="${size}" viewBox="0 0 200 200" class="logo-badge" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" style="display:block;flex:none">
+    <defs>
+      <linearGradient id="${u}-bg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1e9e4c"/>
+        <stop offset=".48" stop-color="#1d8f55"/>
+        <stop offset="1" stop-color="#19698a"/>
+      </linearGradient>
+      <clipPath id="${u}-c"><circle cx="100" cy="100" r="${R - 1}"/></clipPath>
+    </defs>
+    <circle cx="100" cy="100" r="98" fill="url(#${u}-bg)"/>
+    <g clip-path="url(#${u}-c)">
+      <path fill="#175339" d="M8 ${mtnBase} C30 ${mtnBase - 16} 50 104 66 76 C74 62 82 50 90 44 C96 39 104 39 110 46 C120 58 130 76 142 90 C156 106 172 114 192 120 L192 ${mtnBot} L8 ${mtnBot} Z"/>
+      ${dots}
     </g>
+    <text x="100" y="${full ? 158 : 156}" font-family="${FONT}" font-size="${full ? 30 : 46}" font-weight="800" letter-spacing="${full ? 7 : 5}" fill="#fff" text-anchor="middle">SRC</text>
+    ${rim}
   </svg>`;
+}
+
+/**
+ * The logo as used in the UI.
+ *
+ * If public/img/logo.png exists it is shown; if that request 404s the <img>
+ * hides itself and the drawn SVG badge underneath shows through. That means
+ * dropping in the official artwork is a file copy — no code change, and no
+ * broken image if the file is ever missing.
+ */
+export function logoSvg(size = 28, opts = {}) {
+  return `<span class="logo-wrap" style="width:${size}px;height:${size}px">
+    <img src="/img/logo.png" alt="" width="${size}" height="${size}" class="logo-img"
+         onerror="this.style.display='none'">
+    ${drawnBadge(size, opts)}
+  </span>`;
+}
+
+/* ---- icons ----------------------------------------------------------------
+   A small stroke-icon set (feather-style, 24×24, currentColor) so the UI
+   never needs emoji. Add to ICONS as needed.
+--------------------------------------------------------------------------- */
+
+const ICONS = {
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h2l4 4V6l-4 4H4a1 1 0 0 0-1 1z"/><path d="M15 8a5 5 0 0 1 0 8"/><path d="M18 5a9 9 0 0 1 0 14"/>',
+  calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  'calendar-plus': '<rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="13.5" x2="12" y2="17.5"/><line x1="10" y1="15.5" x2="14" y2="15.5"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  'user-plus': '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>',
+  'user-x': '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/>',
+  comment: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  up: '<path d="m18 15-6-6-6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  left: '<path d="m15 18-6-6 6-6"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  place: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  unlock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+  chart: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+  bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+  bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  key: '<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3"/>',
+  contrast: '<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" stroke="none"/>',
+  clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+};
+
+/** Inline stroke icon. Always use this instead of an emoji. */
+export function icon(name, size = 18, cls = '') {
+  const d = ICONS[name] || ICONS.alert;
+  return `<svg class="ic${cls ? ' ' + cls : ''}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+}
+
+/** Trigger a client-side file download. */
+export function downloadFile(filename, text, mime = 'text/plain') {
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** Escape text for safe interpolation into HTML. Used on EVERY user string. */

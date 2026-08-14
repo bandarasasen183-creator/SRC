@@ -21,7 +21,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, modal, renderBody,
-  todayISO, fmtDate,
+  todayISO, fmtDate, icon, downloadFile,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 import { csvCell, downloadCsv } from './forms.js';
@@ -92,14 +92,14 @@ export async function renderEvents(mount) {
           <button data-f="mine" aria-pressed="${filterMine}">Mine</button>
         </div>
         <span class="grow"></span>
-        ${isTeacher() ? '<button class="btn sm" id="newEvent">+ New event</button>' : ''}
+        ${isTeacher() ? `<button class="btn sm" id="newEvent">${icon('calendar-plus', 15)} New event</button>` : ''}
       </div>
 
       <div class="cal">
         <div class="cal-head">
-          <button class="btn ghost icon sm" id="calPrev" aria-label="Previous month">‹</button>
+          <button class="btn ghost icon sm" id="calPrev" aria-label="Previous month">${icon('left', 16)}</button>
           <strong class="grow center" id="calTitle"></strong>
-          <button class="btn ghost icon sm" id="calNext" aria-label="Next month">›</button>
+          <button class="btn ghost icon sm" id="calNext" aria-label="Next month">${icon('right', 16)}</button>
         </div>
         <div class="cal-grid" id="calGrid"></div>
       </div>
@@ -210,7 +210,7 @@ function drawList(mount) {
         : 'No events this month yet.';
     listEl.replaceChildren(h(`
       <div class="empty" style="padding:28px 20px">
-        <div class="big">📅</div>
+        <div class="icirc">${icon('calendar', 24)}</div>
         <p>${esc(what)}</p>
         ${selectedDate ? '<button class="btn ghost sm" id="clearDay">Show the whole month</button>' : ''}
       </div>`));
@@ -230,8 +230,8 @@ function drawList(mount) {
           <div style="font-weight:600">${esc(ev.title)}</div>
           ${timeAndPlace(ev) ? `<div class="small muted">${esc(timeAndPlace(ev))}</div>` : ''}
         </div>
-        ${mySet.has(ev.id) ? '<span class="pill pin">✓ Going</span>'
-          : (ev.signupOpen ? '<span class="pill off">Sign-up open</span>' : '')}
+        ${mySet.has(ev.id) ? `<span class="pill pin">${icon('check', 12)} Going</span>`
+          : (ev.signupOpen ? `<span class="pill off">${icon('user-plus', 12)} Sign-up open</span>` : '')}
       </div>`);
     const open = () => openEvent(ev, mount);
     row.onclick = open;
@@ -246,16 +246,29 @@ function drawList(mount) {
    ========================================================================== */
 
 async function openEvent(ev, mount) {
+  const times = ev.startTime
+    ? fmtTime(ev.startTime) + (ev.endTime ? `–${fmtTime(ev.endTime)}` : '')
+    : '';
   const m = modal(`
     <h2>${esc(ev.title)}</h2>
     <div class="meta" style="margin-bottom:12px">
-      <span>${esc(fmtDate(ev.date))}</span>
-      ${timeAndPlace(ev) ? `<span class="dot">•</span><span>${esc(timeAndPlace(ev))}</span>` : ''}
+      <span>${icon('calendar', 13)} ${esc(fmtDate(ev.date))}</span>
+      ${times ? `<span>${icon('clock', 13)} ${esc(times)}</span>` : ''}
+      ${ev.location ? `<span>${icon('place', 13)} ${esc(ev.location)}</span>` : ''}
     </div>
     ${ev.description ? `<div class="body">${renderBody(ev.description)}</div>` : ''}
-    <div id="evSignupBox" style="margin-top:16px"></div>
+    <div style="margin-top:14px">
+      <button class="btn ghost sm" id="evIcs">${icon('download', 14)} Add to my calendar</button>
+    </div>
+    <div id="evSignupBox" style="margin-top:14px"></div>
     <div id="evTeacherBox"></div>
   `);
+
+  m.root.querySelector('#evIcs').onclick = () => {
+    const safe = (ev.title || 'event').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    downloadFile(`${safe}.ics`, buildIcs(ev), 'text/calendar');
+    toast('Calendar file downloaded — open it to add the event.');
+  };
 
   const signupBox = m.root.querySelector('#evSignupBox');
 
@@ -265,8 +278,8 @@ async function openEvent(ev, mount) {
       if (signedUp) {
         signupBox.replaceChildren(h(`
           <div>
-            <div class="note" style="margin-bottom:10px"><strong>✓ You're signed up.</strong></div>
-            <button class="btn ghost sm" id="evCancelSignup">Remove my signup</button>
+            <div class="note" style="margin-bottom:10px"><strong>${icon('check', 14)} You're signed up.</strong></div>
+            <button class="btn ghost sm" id="evCancelSignup">${icon('x', 14)} Remove my signup</button>
           </div>`));
         signupBox.querySelector('#evCancelSignup').onclick = async (e) => {
           busy(e.currentTarget, true, '…');
@@ -281,7 +294,7 @@ async function openEvent(ev, mount) {
         };
       } else {
         signupBox.replaceChildren(h(`
-          <button class="btn block" id="evSignup">Sign up for this</button>`));
+          <button class="btn block" id="evSignup">${icon('check', 16)} Sign up for this</button>`));
         signupBox.querySelector('#evSignup').onclick = async (e) => {
           busy(e.currentTarget, true, 'Signing up…');
           try {
@@ -323,7 +336,7 @@ async function openEvent(ev, mount) {
         <div>
           <div class="row" style="margin-bottom:8px">
             <strong class="grow">${people.length} signed up</strong>
-            ${people.length ? '<button class="btn subtle sm" id="evCsv">Export CSV</button>' : ''}
+            ${people.length ? `<button class="btn subtle sm" id="evCsv">${icon('download', 14)} Export CSV</button>` : ''}
           </div>
           ${people.length ? `
             <div class="tablewrap"><table>
@@ -333,8 +346,8 @@ async function openEvent(ev, mount) {
               </tbody>
             </table></div>` : ev.signupOpen ? '' : '<p class="small muted">Sign-ups are off for this event.</p>'}
           <div class="btn-row" style="margin-top:12px">
-            <button class="btn ghost sm" id="evEdit">Edit</button>
-            <button class="btn danger sm" id="evDelete">Delete</button>
+            <button class="btn ghost sm" id="evEdit">${icon('edit', 14)} Edit</button>
+            <button class="btn danger sm" id="evDelete">${icon('trash', 14)} Delete</button>
           </div>
         </div>`);
 
@@ -479,4 +492,58 @@ function openEventComposer(existing, onSaved) {
       toast(friendlyError(err), true);
     }
   };
+}
+
+/* =============================================================================
+   iCalendar export — pure client, so "Add to my calendar" needs no server.
+   ========================================================================== */
+
+function icsEscape(v) {
+  return String(v ?? '')
+    .replaceAll('\\', '\\\\')
+    .replaceAll(';', '\\;')
+    .replaceAll(',', '\\,')
+    .replaceAll('\r\n', '\\n')
+    .replaceAll('\n', '\\n');
+}
+
+function buildIcs(ev) {
+  const d = ev.date.replaceAll('-', '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, 'Z');
+
+  let dtstart, dtend;
+  if (ev.startTime) {
+    // Floating local time: correct for a school where everyone shares a zone.
+    const st = ev.startTime.replace(':', '') + '00';
+    dtstart = `DTSTART:${d}T${st}`;
+    if (ev.endTime) {
+      dtend = `DTEND:${d}T${ev.endTime.replace(':', '')}00`;
+    } else {
+      const endH = String(Math.min(23, Number(ev.startTime.slice(0, 2)) + 1)).padStart(2, '0');
+      dtend = `DTEND:${d}T${endH}${ev.startTime.slice(3, 5)}00`;
+    }
+  } else {
+    const next = new Date(ev.date + 'T12:00:00');
+    next.setDate(next.getDate() + 1);
+    const n = `${next.getFullYear()}${pad(next.getMonth() + 1)}${pad(next.getDate())}`;
+    dtstart = `DTSTART;VALUE=DATE:${d}`;
+    dtend = `DTEND;VALUE=DATE:${n}`;
+  }
+
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//SRC//Events//EN',
+    'BEGIN:VEVENT',
+    `UID:${ev.id}@src`,
+    `DTSTAMP:${stamp}`,
+    dtstart,
+    dtend,
+    `SUMMARY:${icsEscape(ev.title)}`,
+    ev.location ? `LOCATION:${icsEscape(ev.location)}` : null,
+    ev.description ? `DESCRIPTION:${icsEscape(ev.description)}` : null,
+    `URL:${location.origin}/#/events`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
 }

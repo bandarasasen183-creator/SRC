@@ -7,6 +7,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, renderBody, fmtDate, fmtWhen,
+  icon,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 import {
@@ -28,15 +29,26 @@ export function stopFeed() {
   openCommentThreads.clear();
 }
 
+const SEEN_KEY = 'src.seenFeed';
+
 export function renderFeed(mount) {
   stopFeed();
+
+  // Anything created after the previous visit gets a "New" badge this visit.
+  const prevSeen = Number(localStorage.getItem(SEEN_KEY) || 0);
+  localStorage.setItem(SEEN_KEY, String(Date.now()));
 
   mount.replaceChildren(h(`
     <div class="wrap">
       ${isTeacher() ? `
         <div class="btn-row" style="margin:16px 0">
-          <button class="btn" id="newPost">+ New announcement</button>
+          <button class="btn" id="newPost">${icon('plus', 16)} New announcement</button>
         </div>` : '<div style="height:16px"></div>'}
+      <label class="searchbox">
+        ${icon('search', 16)}
+        <input type="text" id="feedSearch" class="grow" placeholder="Search announcements"
+               autocomplete="off" aria-label="Search announcements">
+      </label>
       <div id="feedList"><div class="spinner"></div></div>
     </div>
   `));
@@ -46,28 +58,44 @@ export function renderFeed(mount) {
   }
 
   const listEl = $('#feedList', mount);
+  const searchEl = $('#feedSearch', mount);
+  let allItems = [];
 
-  const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(FEED_LIMIT));
-  unsubFeed = onSnapshot(q, (snap) => {
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    // Pinned first, then newest. Done here so no composite index is needed.
-    items.sort((a, b) => {
-      if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
-      return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
-    });
+  const renderList = () => {
+    const term = searchEl.value.trim().toLowerCase();
+    const items = term
+      ? allItems.filter((a) =>
+          (a.title || '').toLowerCase().includes(term)
+          || (a.body || '').toLowerCase().includes(term))
+      : allItems;
 
     if (!items.length) {
       listEl.replaceChildren(h(`
         <div class="empty">
-          <div class="big">🌱</div>
-          <h2>Nothing here yet</h2>
-          <p>${isTeacher()
-            ? 'Post the first announcement to get things started.'
-            : 'Your SRC teachers haven\'t posted anything yet. Check back soon.'}</p>
+          <div class="icirc">${term ? icon('search', 24) : icon('megaphone', 24)}</div>
+          <h2>${term ? 'No matches' : 'Nothing here yet'}</h2>
+          <p>${term
+            ? 'Nothing matches that search.'
+            : isTeacher()
+              ? 'Post the first announcement to get things started.'
+              : 'Your SRC teachers haven\'t posted anything yet. Check back soon.'}</p>
         </div>`));
       return;
     }
-    listEl.replaceChildren(...items.map(card));
+    listEl.replaceChildren(...items.map((a) => card(a, prevSeen)));
+  };
+
+  searchEl.addEventListener('input', renderList);
+
+  const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(FEED_LIMIT));
+  unsubFeed = onSnapshot(q, (snap) => {
+    allItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Pinned first, then newest. Done here so no composite index is needed.
+    allItems.sort((a, b) => {
+      if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
+      return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+    });
+    renderList();
   }, (err) => {
     console.error(err);
     listEl.replaceChildren(h(`<div class="note bad">${esc(friendlyError(err))}</div>`));
@@ -76,13 +104,15 @@ export function renderFeed(mount) {
 
 /* ---- one announcement ---------------------------------------------------- */
 
-function card(a) {
+function card(a, prevSeen = Infinity) {
   const mine = a.authorUid === state.user.uid;
+  const isNew = (a.createdAt?.seconds || 0) * 1000 > prevSeen;
   const el = h(`
     <article class="card${a.pinned ? ' pinned' : ''}">
       <div class="card-head">
         <h2>${esc(a.title)}</h2>
-        ${a.pinned ? '<span class="pill pin">Pinned</span>' : ''}
+        ${isNew ? `<span class="pill new">${icon('bell', 12)} New</span>` : ''}
+        ${a.pinned ? `<span class="pill pin">${icon('bookmark', 12)} Pinned</span>` : ''}
       </div>
       <div class="meta" style="margin-bottom:10px">
         <span>${esc(a.authorName || 'SRC')}</span>
@@ -105,15 +135,15 @@ function card(a) {
   const row = h('<div class="btn-row"></div>');
 
   if (a.commentsOpen || a.commentCount) {
-    const cbtn = h(`<button class="btn subtle sm">${a.commentsOpen ? 'Comments' : 'View comments'}</button>`);
+    const cbtn = h(`<button class="btn subtle sm">${icon('comment', 15)} ${a.commentsOpen ? 'Comments' : 'View comments'}</button>`);
     cbtn.onclick = () => toggleComments(el, a, cbtn);
     row.appendChild(cbtn);
   } else {
-    row.appendChild(h('<span class="pill off">Comments off</span>'));
+    row.appendChild(h(`<span class="pill off">${icon('lock', 12)} Comments off</span>`));
   }
 
   if (isTeacher() && a.formId) {
-    const resp = h('<button class="btn subtle sm">Responses</button>');
+    const resp = h(`<button class="btn subtle sm">${icon('list', 15)} Responses</button>`);
     resp.onclick = () => {
       const box = el.querySelector('[data-responses]') || h('<div data-responses style="margin-top:14px"></div>');
       if (!box.isConnected) actions.appendChild(box);
@@ -126,7 +156,7 @@ function card(a) {
     // Teacher controls live behind one toggle so the card stays readable on a
     // phone — six buttons in a row wraps into a wall.
     const manageRow = h('<div class="btn-row" style="margin-top:8px" hidden></div>');
-    const manageBtn = h('<button class="btn ghost sm" aria-expanded="false">⋯ Manage</button>');
+    const manageBtn = h(`<button class="btn ghost sm" aria-expanded="false">${icon('more', 15)} Manage</button>`);
     manageBtn.onclick = () => {
       const show = manageRow.hidden;
       manageRow.hidden = !show;
@@ -134,24 +164,24 @@ function card(a) {
     };
     row.appendChild(manageBtn);
 
-    const edit = h('<button class="btn ghost sm">Edit</button>');
+    const edit = h(`<button class="btn ghost sm">${icon('edit', 14)} Edit</button>`);
     edit.onclick = () => openComposer(a, () => toast('Announcement updated.'));
 
-    const pin = h(`<button class="btn ghost sm">${a.pinned ? 'Unpin' : 'Pin'}</button>`);
+    const pin = h(`<button class="btn ghost sm">${icon('bookmark', 14)} ${a.pinned ? 'Unpin' : 'Pin'}</button>`);
     pin.onclick = async (e) => {
       busy(e.currentTarget, true, '…');
       try { await updateDoc(doc(db, 'announcements', a.id), { pinned: !a.pinned }); }
       catch (err) { toast(friendlyError(err), true); busy(e.currentTarget, false); }
     };
 
-    const close = h(`<button class="btn ghost sm">${a.commentsOpen ? 'Close comments' : 'Open comments'}</button>`);
+    const close = h(`<button class="btn ghost sm">${icon(a.commentsOpen ? 'lock' : 'unlock', 14)} ${a.commentsOpen ? 'Close comments' : 'Open comments'}</button>`);
     close.onclick = async (e) => {
       busy(e.currentTarget, true, '…');
       try { await updateDoc(doc(db, 'announcements', a.id), { commentsOpen: !a.commentsOpen }); }
       catch (err) { toast(friendlyError(err), true); busy(e.currentTarget, false); }
     };
 
-    const del = h('<button class="btn danger sm">Delete</button>');
+    const del = h(`<button class="btn danger sm">${icon('trash', 14)} Delete</button>`);
     del.onclick = async () => {
       const ok = await confirmDialog('Delete this announcement?',
         'The post and its comments will be removed. This cannot be undone.');
@@ -185,7 +215,7 @@ async function showMailStatus(mount, announcementId) {
     const d = snap.data();
     if (d.status === 'sent' && !d.failed) {
       mount.prepend(h(`<div class="small muted" style="margin-bottom:8px">
-        ✓ Emailed ${Number(d.sent) || 0} student${d.sent === 1 ? '' : 's'}</div>`));
+        ${icon('mail', 13)} Emailed ${Number(d.sent) || 0} student${d.sent === 1 ? '' : 's'}</div>`));
     } else if (d.status === 'skipped') {
       mount.prepend(h('<div class="small muted" style="margin-bottom:8px">No email sent for this post.</div>'));
     } else {
@@ -307,7 +337,7 @@ function toggleComments(cardEl, a, btn) {
           style="min-height:64px"></textarea>
         <div class="row" style="margin-top:8px">
           <span class="small muted grow">Posting as <strong>${esc(state.profile.name)}</strong> — teachers can see who wrote it.</span>
-          <button class="btn sm" type="submit">Post</button>
+          <button class="btn sm" type="submit">${icon('send', 14)} Post</button>
         </div>
       </form>`);
     composer.addEventListener('submit', async (e) => {
@@ -367,7 +397,7 @@ function commentEl(a, c) {
   const acts = el.querySelector('[data-cactions]');
 
   if (mine && a.commentsOpen) {
-    const ed = h('<button class="btn ghost sm">Edit</button>');
+    const ed = h(`<button class="btn ghost sm">${icon('edit', 13)} Edit</button>`);
     ed.onclick = () => {
       const ta = h(`<textarea maxlength="2000" style="min-height:64px"></textarea>`);
       ta.value = c.text;
@@ -393,7 +423,7 @@ function commentEl(a, c) {
   }
 
   if (mine || isTeacher()) {
-    const del = h('<button class="btn danger sm">Delete</button>');
+    const del = h(`<button class="btn danger sm">${icon('trash', 13)} Delete</button>`);
     del.onclick = async () => {
       const ok = await confirmDialog('Delete this comment?',
         mine ? 'Your comment will be removed.' : `This will remove ${c.authorName}'s comment.`,

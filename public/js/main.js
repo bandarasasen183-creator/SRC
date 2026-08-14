@@ -1,7 +1,7 @@
 // App shell: auth state, nav, routing.
 
 import { auth, db, onAuthStateChanged, signOut, doc, getDoc } from './fb.js';
-import { esc, h, $, toast, friendlyError, modal, logoSvg } from './ui.js';
+import { esc, h, $, toast, friendlyError, modal, logoSvg, icon } from './ui.js';
 import { state, isTeacher } from './state.js';
 import {
   renderSignIn, completeEmailLinkIfPresent, renderOnboarding,
@@ -33,7 +33,11 @@ function cycleTheme() {
 
 /* ---- routing ------------------------------------------------------------- */
 
-const ROUTES = { feed: 'Announcements', events: 'Events', admin: 'Admin' };
+const ROUTES = {
+  feed: { label: 'Announcements', ic: 'megaphone' },
+  events: { label: 'Events', ic: 'calendar' },
+  admin: { label: 'Admin', ic: 'users' },
+};
 
 function currentRoute() {
   const r = location.hash.replace(/^#\/?/, '') || 'feed';
@@ -52,14 +56,14 @@ function shell() {
             <span>SRC</span>
           </a>
           <span class="spacer"></span>
-          <button class="btn ghost sm" id="themeBtn" title="Change theme" aria-label="Change theme">◐</button>
-          <button class="btn ghost sm" id="meBtn">${esc(firstName(state.profile.name))}</button>
+          <button class="btn ghost sm" id="themeBtn" title="Change theme" aria-label="Change theme">${icon('contrast', 16)}</button>
+          <button class="btn ghost sm" id="meBtn">${icon('user', 15)} ${esc(firstName(state.profile.name))}</button>
         </div>
         <nav class="tabs" style="padding-bottom:8px">
           ${Object.entries(ROUTES)
             .filter(([k]) => k !== 'admin' || isTeacher())
-            .map(([k, label]) => `<button class="tab" data-route="${k}"
-              ${k === route ? 'aria-current="page"' : ''}>${esc(label)}</button>`).join('')}
+            .map(([k, r]) => `<button class="tab" data-route="${k}"
+              ${k === route ? 'aria-current="page"' : ''}>${icon(r.ic, 16)}${esc(r.label)}</button>`).join('')}
         </nav>
       </header>
       <main id="view"></main>
@@ -91,9 +95,9 @@ function openMe() {
       ${p.role === 'teacher' ? '<span class="pill" style="margin-left:6px">Teacher</span>' : ''}</p>
     <hr class="divider">
     <div class="stack">
-      <button class="btn ghost block" id="mPass">Set or change a password</button>
+      <button class="btn ghost block" id="mPass">${icon('key', 16)} Set or change a password</button>
       <p class="small muted" style="margin:0">Optional — the emailed sign-in link always works.</p>
-      <button class="btn danger block" id="mOut">Sign out</button>
+      <button class="btn danger block" id="mOut">${icon('logout', 16)} Sign out</button>
     </div>
   `);
   m.root.querySelector('#mPass').onclick = () => { m.close(); openSetPassword(); };

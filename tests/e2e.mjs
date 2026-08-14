@@ -361,7 +361,7 @@ try {
   check('student sees the signed-up state', await s.isVisible("text=You're signed up"));
   await s.keyboard.press('Escape');
   await s.waitForTimeout(400);
-  check('list now shows the Going badge', await s.isVisible('text=✓ Going'));
+  check('list now shows the Going badge', await s.isVisible('.pill:has-text("Going")'));
 
   // "Mine" filter shows only what they signed up for.
   await s.click('.seg [data-f="mine"]');

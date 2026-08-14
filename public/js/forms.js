@@ -4,7 +4,7 @@
 import {
   db, doc, collection, getDoc, getDocs, setDoc, updateDoc, serverTimestamp,
 } from './fb.js';
-import { esc, h, $, $$, toast, busy, friendlyError, confirmDialog, fmtWhen } from './ui.js';
+import { esc, h, $, $$, toast, busy, friendlyError, confirmDialog, fmtWhen, icon } from './ui.js';
 
 export const FIELD_TYPES = [
   { v: 'short_text',  label: 'Short text' },
@@ -58,7 +58,7 @@ export function formBuilder(mount, initial = null) {
       <h3 style="margin-top:18px">Questions</h3>
       <div id="fbFields"></div>
       <div class="btn-row">
-        <button type="button" class="btn subtle sm" id="fbAdd">+ Add question</button>
+        <button type="button" class="btn subtle sm" id="fbAdd">${icon('plus', 14)} Add question</button>
       </div>
 
       <h3 style="margin-top:22px">Live preview <span class="small muted">— what students see</span></h3>
@@ -91,9 +91,9 @@ export function formBuilder(mount, initial = null) {
             ${FIELD_TYPES.map((t) => `<option value="${t.v}"${t.v === f.type ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}
           </select>
           <span class="spacer grow"></span>
-          <button type="button" class="btn ghost icon sm" data-up title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
-          <button type="button" class="btn ghost icon sm" data-down title="Move down" aria-label="Move down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button>
-          <button type="button" class="btn danger icon sm" data-del title="Delete question" aria-label="Delete question">×</button>
+          <button type="button" class="btn ghost icon sm" data-up title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>${icon('up', 15)}</button>
+          <button type="button" class="btn ghost icon sm" data-down title="Move down" aria-label="Move down" ${i === fields.length - 1 ? 'disabled' : ''}>${icon('down', 15)}</button>
+          <button type="button" class="btn danger icon sm" data-del title="Delete question" aria-label="Delete question">${icon('trash', 14)}</button>
         </div>
         <input type="text" data-label placeholder="Question ${i + 1}" maxlength="200" style="margin-bottom:7px">
         <input type="text" data-help placeholder="Help text (optional)" maxlength="200" style="margin-bottom:7px">
@@ -139,7 +139,7 @@ export function formBuilder(mount, initial = null) {
       f.options.forEach((opt, oi) => {
         const row = h(`<div class="opt-row">
           <input type="text" class="grow" maxlength="120">
-          <button type="button" class="btn ghost icon sm" title="Remove choice" aria-label="Remove choice">×</button>
+          <button type="button" class="btn ghost icon sm" title="Remove choice" aria-label="Remove choice">${icon('x', 14)}</button>
         </div>`);
         const inp = row.querySelector('input');
         inp.value = opt;
@@ -151,7 +151,7 @@ export function formBuilder(mount, initial = null) {
         };
         box.appendChild(row);
       });
-      const add = h('<button type="button" class="btn subtle sm">+ Add choice</button>');
+      const add = h(`<button type="button" class="btn subtle sm">${icon('plus', 13)} Add choice</button>`);
       add.onclick = () => { f.options.push(`Option ${f.options.length + 1}`); renderFields(); };
       box.appendChild(add);
     }
@@ -365,6 +365,44 @@ export function downloadCsv(filename, csv) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * At-a-glance counts for every choice-style question, as label + bar + count.
+ * Free-text answers stay in the table; there is nothing sensible to chart.
+ */
+function summaryHtml(form, responses) {
+  if (!responses.length) return '';
+  const choiceFields = (form.fields || []).filter((f) =>
+    ['choice_one', 'choice_many', 'dropdown', 'yesno'].includes(f.type));
+  if (!choiceFields.length) return '';
+
+  const blocks = choiceFields.map((f) => {
+    const options = f.type === 'yesno' ? ['Yes', 'No'] : (f.options || []);
+    if (!options.length) return '';
+    const counts = new Map(options.map((o) => [o, 0]));
+    for (const r of responses) {
+      const a = r.answers?.[f.id];
+      const vals = Array.isArray(a) ? a : (a == null || a === '' ? [] : [a]);
+      for (const v of vals) if (counts.has(v)) counts.set(v, counts.get(v) + 1);
+    }
+    const max = Math.max(1, ...counts.values());
+    return `<div class="sumfield">
+      <span class="lbl">${esc(f.label)}</span>
+      ${options.map((o) => `
+        <div class="sumrow">
+          <span class="lab" title="${esc(o)}">${esc(o)}</span>
+          <span class="bar"><i style="width:${Math.round((counts.get(o) / max) * 100)}%"></i></span>
+          <span class="n">${counts.get(o)}</span>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
+
+  if (!blocks) return '';
+  return `<div style="margin-top:14px">
+    <div class="row small muted" style="gap:6px;margin-bottom:8px">${icon('chart', 14)} <strong>At a glance</strong></div>
+    ${blocks}
+  </div>`;
+}
+
 /** Teacher view: responses table, who's missing, CSV button. */
 export async function renderResponsesView(mount, formId, rosterEmails = []) {
   mount.replaceChildren(h('<div class="spinner"></div>'));
@@ -383,13 +421,14 @@ export async function renderResponsesView(mount, formId, rosterEmails = []) {
       <div>
         <div class="row" style="margin-bottom:6px">
           <strong class="grow">${esc(form.title || 'Form')}</strong>
-          <button class="btn subtle sm" id="csv">Export CSV</button>
+          <button class="btn subtle sm" id="csv">${icon('download', 14)} Export CSV</button>
         </div>
         ${rosterEmails.length ? `
           <div class="bar" style="margin:8px 0 6px"><i style="width:${pct}%"></i></div>
           <div class="small muted">${responded.size} of ${rosterEmails.length} students responded (${pct}%)</div>
         ` : `<div class="small muted">${responses.length} response${responses.length === 1 ? '' : 's'}</div>`}
 
+        ${summaryHtml(form, responses)}
         ${responses.length ? `
           <div class="tablewrap" style="margin-top:14px">
             <table>

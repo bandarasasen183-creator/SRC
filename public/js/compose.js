@@ -6,6 +6,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, modal, renderBody, todayISO,
+  confirmDialog, fmtDate, icon,
 } from './ui.js';
 import { state } from './state.js';
 import { formBuilder } from './forms.js';
@@ -86,7 +87,7 @@ export function openComposer(existing, onSaved) {
 
     <div class="btn-row" style="justify-content:flex-end;margin-top:20px">
       <button class="btn ghost" id="cCancel">Cancel</button>
-      <button class="btn" id="cSave">${editing ? 'Save changes' : 'Post announcement'}</button>
+      <button class="btn" id="cSave">${icon('send', 15)} ${editing ? 'Save changes' : 'Post announcement'}</button>
     </div>
   `);
 
@@ -216,12 +217,49 @@ export function openComposer(existing, onSaved) {
           createdAt: serverTimestamp(),
         });
       }
+      const postedDate = dateEl.value || todayISO();
       m.close();
       onSaved?.();
+      // A future-dated announcement is usually about something happening on
+      // that day — offer to put it on the Events calendar too.
+      if (!editing && postedDate > todayISO()) {
+        offerMatchingEvent(title, postedDate, body);
+      }
     } catch (err) {
       console.error(err);
       busy(btn, false);
       toast(friendlyError(err), true);
     }
   };
+}
+
+/**
+ * Posted an announcement dated in the future? Offer to mirror it onto the
+ * Events calendar so it shows up where people look for dates.
+ */
+async function offerMatchingEvent(title, date, body) {
+  const ok = await confirmDialog(
+    'Put this on the calendar too?',
+    `This announcement is dated ${fmtDate(date)}. Add it to the Events calendar so people can find it there?`,
+    { danger: false, okLabel: 'Add event' }
+  );
+  if (!ok) return;
+  try {
+    await addDoc(collection(db, 'events'), {
+      title,
+      date,
+      startTime: '',
+      endTime: '',
+      location: '',
+      description: String(body || '').slice(0, 4900),
+      signupOpen: false,
+      createdBy: state.user.uid,
+      createdByName: state.profile.name,
+      createdAt: serverTimestamp(),
+    });
+    toast('Added to Events. You can set times or sign-ups in the Events tab.');
+  } catch (e) {
+    console.error(e);
+    toast(friendlyError(e), true);
+  }
 }

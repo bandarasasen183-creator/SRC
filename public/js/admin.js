@@ -5,9 +5,10 @@ import {
   doc, collection, getDocs, setDoc, deleteDoc, updateDoc, serverTimestamp, writeBatch,
 } from './fb.js';
 import {
-  esc, h, $, toast, busy, friendlyError, confirmDialog, fmtWhen,
+  esc, h, $, toast, busy, friendlyError, confirmDialog, fmtWhen, icon, downloadFile,
 } from './ui.js';
 import { chipInput, DEFAULT_DOMAIN } from './emails.js';
+import { csvCell } from './forms.js';
 import { state } from './state.js';
 
 /** Max addresses accepted in one go. Guards against a runaway paste. */
@@ -39,8 +40,8 @@ export async function renderAdmin(mount) {
             <span class="sw-sub">That email is the invitation.</span></span>
         </label>
         <div class="btn-row" style="margin-top:12px">
-          <button class="btn" id="addBtn">Add to roster</button>
-          <button class="btn ghost" id="clearBtn">Clear</button>
+          <button class="btn" id="addBtn">${icon('user-plus', 16)} Add to roster</button>
+          <button class="btn ghost" id="clearBtn">${icon('x', 15)} Clear</button>
         </div>
         <div id="addResult"></div>
       </div>
@@ -50,7 +51,8 @@ export async function renderAdmin(mount) {
       <div class="card">
         <div class="row" style="margin-bottom:4px">
           <h2 class="grow" style="margin:0">Roster</h2>
-          <button class="btn ghost sm" id="refresh">Refresh</button>
+          <button class="btn ghost sm" id="rosterCsv">${icon('download', 14)} CSV</button>
+          <button class="btn ghost sm" id="refresh">${icon('refresh', 14)} Refresh</button>
         </div>
         <div id="rosterBox"><div class="spinner"></div></div>
       </div>
@@ -140,9 +142,25 @@ export async function renderAdmin(mount) {
 
   $('#refresh', mount).onclick = () => { loadRoster(mount); loadRequests(mount); };
 
+  $('#rosterCsv', mount).onclick = () => {
+    if (!lastRosterRows.length) { toast('Load the roster first.', true); return; }
+    const rows = [
+      ['Email', 'Name', 'Year/Class', 'Role', 'Status'],
+      ...lastRosterRows.map((r) => [
+        r.email, r.user?.name || '', r.user?.yearClass || '', r.role || 'student',
+        r.user ? 'Signed in' : 'Invited, not signed in',
+      ]),
+    ];
+    const csv = '\ufeff' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
+    downloadFile('src-roster.csv', csv, 'text/csv');
+  };
+
   loadRoster(mount);
   loadRequests(mount);
 }
+
+/** Last loaded roster, kept for the CSV export. */
+let lastRosterRows = [];
 
 /* ---- roster -------------------------------------------------------------- */
 
@@ -175,6 +193,7 @@ async function loadRoster(mount) {
       });
 
     state.rosterEmails = rows.filter((r) => r.role !== 'teacher').map((r) => r.email);
+    lastRosterRows = rows;
 
     const signedIn = rows.filter((r) => r.user).length;
     const pending = rows.length - signedIn;
@@ -199,11 +218,11 @@ async function loadRoster(mount) {
                   <td>${esc(r.user?.yearClass || '—')}</td>
                   <td>${r.role === 'teacher' ? '<span class="pill">Teacher</span>' : 'Student'}</td>
                   <td>${r.user
-                    ? '<span class="pill">Signed in</span>'
-                    : '<span class="pill off">Not yet</span>'}</td>
+                    ? `<span class="pill pin">${icon('check', 12)} Signed in</span>`
+                    : `<span class="pill off">${icon('clock', 12)} Not yet</span>`}</td>
                   <td>
-                    <button class="btn ghost sm" data-resend>Resend</button>
-                    <button class="btn danger sm" data-remove>Remove</button>
+                    <button class="btn ghost sm" data-resend>${icon('send', 13)} Resend</button>
+                    <button class="btn danger sm" data-remove>${icon('trash', 13)} Remove</button>
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -269,8 +288,8 @@ async function loadRequests(mount) {
                   <td>${esc(r.yearClass || '—')}</td>
                   <td>${esc(fmtWhen(r.requestedAt))}</td>
                   <td>
-                    <button class="btn sm" data-approve>Approve</button>
-                    <button class="btn ghost sm" data-deny>Dismiss</button>
+                    <button class="btn sm" data-approve>${icon('check', 14)} Approve</button>
+                    <button class="btn ghost sm" data-deny>${icon('x', 14)} Dismiss</button>
                   </td>
                 </tr>`).join('')}
             </tbody>

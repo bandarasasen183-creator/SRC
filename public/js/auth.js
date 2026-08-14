@@ -9,7 +9,7 @@ import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword,
   doc, getDoc, setDoc, serverTimestamp,
 } from './fb.js';
-import { esc, h, $, toast, busy, friendlyError, modal, logoSvg } from './ui.js';
+import { esc, h, $, toast, busy, friendlyError, modal, logoSvg, icon } from './ui.js';
 import { normaliseEmail } from './emails.js';
 
 const PENDING_EMAIL_KEY = 'src.pendingEmail';
@@ -29,7 +29,7 @@ export function renderSignIn(mountEl) {
   mountEl.replaceChildren(h(`
     <div class="wrap">
       <div class="auth-hero">
-        <div class="hero-logo">${logoSvg(56)}</div>
+        <div class="hero-logo">${logoSvg(150, { full: true })}</div>
         <h1>Student Representative Council</h1>
         <p>Sign in with your school email. No password needed — we'll email you a link.</p>
       </div>
@@ -44,7 +44,7 @@ export function renderSignIn(mountEl) {
             <span class="help" id="emailHint">Type just <strong>john.smith</strong> and we'll add
               <strong>@education.nsw.gov.au</strong> for you.</span>
           </label>
-          <button class="btn block" type="submit" id="sendBtn">Email me a sign-in link</button>
+          <button class="btn block" type="submit" id="sendBtn">${icon('mail', 17)} Email me a sign-in link</button>
         </form>
 
         <hr class="divider">
@@ -126,7 +126,7 @@ function showLinkSent(mountEl, email) {
   mountEl.replaceChildren(h(`
     <div class="wrap">
       <div class="auth-hero">
-        <div class="logo-mark">✓</div>
+        <div class="hero-icon">${icon('mail', 28)}</div>
         <h1>Check your email</h1>
         <p>We sent a sign-in link to <strong>${esc(email)}</strong>. Open it on this device.</p>
       </div>
@@ -215,7 +215,7 @@ export function renderOnboarding(mountEl, user, onDone) {
   mountEl.replaceChildren(h(`
     <div class="wrap">
       <div class="auth-hero">
-        <div class="hero-logo">${logoSvg(56)}</div>
+        <div class="hero-logo">${logoSvg(110, { full: true })}</div>
         <h1>One quick thing</h1>
         <p>Signed in as <strong>${esc(email)}</strong></p>
       </div>
@@ -301,7 +301,7 @@ function renderNotOnRoster(mountEl, user, name, yearClass) {
   mountEl.replaceChildren(h(`
     <div class="wrap">
       <div class="auth-hero">
-        <div class="logo-mark">?</div>
+        <div class="hero-icon warn">${icon('user-x', 28)}</div>
         <h1>You're not on the roster yet</h1>
         <p><strong>${esc(email)}</strong> hasn't been added by an SRC teacher.</p>
       </div>
