@@ -40,6 +40,17 @@ fi
 DIMS=$(sips -g pixelWidth -g pixelHeight "$SRC" | awk '/pixel/ {printf "%s ", $2}')
 green "Source: $SRC (${DIMS}px)"
 
+# A flat white box behind a round badge looks wrong on the page and terrible
+# in dark mode, so strip it. Safe to re-run: it detects an already
+# transparent background and does nothing. Keeps logo-original.png.
+if command -v node >/dev/null 2>&1; then
+  echo
+  node scripts/remove-bg.mjs "$SRC" || warn "Background removal skipped."
+  echo
+else
+  warn "node not found — skipping background removal."
+fi
+
 gen() { # size, outfile
   sips -s format png -Z "$1" "$SRC" --out "$2" >/dev/null 2>&1
   green "  wrote $2 (${1}px)"

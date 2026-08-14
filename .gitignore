@@ -9,3 +9,4 @@ ui-debug.log
 .env.*
 !.env.example
 .DS_Store
+public/img/logo-original.png
