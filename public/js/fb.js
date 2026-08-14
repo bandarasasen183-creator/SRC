@@ -35,7 +35,12 @@ export const config = await loadConfig();
 const app = initializeApp(config);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const fns = getFunctions(app);
+// MUST match setGlobalOptions({ region }) in functions/index.js. If these
+// drift, every callable fails with the opaque code "internal", because the
+// request goes to a region where the function does not exist.
+// tests/region.test.js asserts they stay in sync.
+export const FUNCTIONS_REGION = 'australia-southeast1';
+export const fns = getFunctions(app, FUNCTIONS_REGION);
 
 if (isLocal) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });

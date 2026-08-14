@@ -359,6 +359,21 @@ export function friendlyError(e) {
     'auth/network-request-failed': 'No connection. Check your internet and try again.',
     'auth/weak-password': 'That password is too short — use at least 6 characters.',
     'unavailable': 'Cannot reach the server. Check your connection.',
+    // Callable-function codes. Without these a teacher sees a bare
+    // "internal", which tells them nothing.
+    'functions/internal': "Couldn't reach the email service. It may still be deploying — try again in a minute.",
+    'internal': "Couldn't reach the email service. It may still be deploying — try again in a minute.",
+    'functions/unauthenticated': 'Sign in again and retry.',
+    'functions/permission-denied': 'Teachers only.',
+    'functions/failed-precondition': 'The email service is not set up yet. See README section 4.',
+    'functions/resource-exhausted': 'Too many requests. Wait a minute and try again.',
+    'functions/unavailable': 'The email service is unreachable right now. Try again shortly.',
+    'functions/deadline-exceeded': 'That took too long. It may still have worked — check before retrying.',
+    'functions/not-found': 'The email service is not deployed. Run: firebase deploy --only functions',
   };
-  return map[code] || e?.message || 'Something went wrong.';
+  if (map[code]) return map[code];
+  const msg = e?.message;
+  // A bare code as the message ("internal") is not an explanation.
+  if (!msg || msg === code || msg.length < 12) return 'Something went wrong. Try again.';
+  return msg;
 }
