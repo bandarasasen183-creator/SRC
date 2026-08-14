@@ -9,4 +9,4 @@ ui-debug.log
 .env.*
 !.env.example
 .DS_Store
-public/img/logo-original.png
+# full-resolution logo master IS tracked — see scripts/build-icons.sh

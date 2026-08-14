@@ -51,6 +51,19 @@ else
   warn "node not found — skipping background removal."
 fi
 
+# The app shows this at 30px in the top bar and 150px on the sign-in screen.
+# Serving multi-megabyte artwork for that is wasteful on a phone, so cap the
+# display copy at 512px — plenty for a 3x retina hero. The full-resolution
+# original stays as logo-original.png.
+LOGO_W=$(sips -g pixelWidth "$SRC" | awk '/pixelWidth/ {print $2}')
+if [ "${LOGO_W:-0}" -gt 512 ]; then
+  [ -f public/img/logo-original.png ] || cp "$SRC" public/img/logo-original.png
+  BEFORE=$(wc -c < "$SRC" | tr -d ' ')
+  sips -s format png -Z 512 "$SRC" --out "$SRC" >/dev/null 2>&1
+  AFTER=$(wc -c < "$SRC" | tr -d ' ')
+  green "  resized logo.png ${LOGO_W}px -> 512px ($((BEFORE/1024))KB -> $((AFTER/1024))KB)"
+fi
+
 gen() { # size, outfile
   sips -s format png -Z "$1" "$SRC" --out "$2" >/dev/null 2>&1
   green "  wrote $2 (${1}px)"
