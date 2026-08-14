@@ -3,7 +3,9 @@
   "description": "SRC notification + invitation emails",
   "private": true,
   "type": "module",
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "22"
+  },
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions"
