@@ -83,9 +83,13 @@ function drawnBadge(size = 28, { full = false } = {}) {
  * broken image if the file is ever missing.
  */
 export function logoSvg(size = 28, opts = {}) {
+  // On success the drawn badge is REMOVED, not just covered. The real logo is
+  // a circular badge with transparent corners, so leaving the fallback
+  // underneath would show green through those corners.
   return `<span class="logo-wrap" style="width:${size}px;height:${size}px">
     <img src="/img/logo.png" alt="" width="${size}" height="${size}" class="logo-img"
-         onerror="this.style.display='none'">
+         onload="this.nextElementSibling && this.nextElementSibling.remove()"
+         onerror="this.remove()">
     ${drawnBadge(size, opts)}
   </span>`;
 }
