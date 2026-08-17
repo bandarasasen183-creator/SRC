@@ -25,6 +25,7 @@ import { getAuth } from 'firebase-admin/auth';
 import * as logger from 'firebase-functions/logger';
 
 import { sendMany, announcementEmail, inviteEmail } from './email.js';
+import { explained } from './callable.js';
 
 initializeApp();
 const db = getFirestore();
@@ -221,7 +222,7 @@ export const sendInvites = onCall(
     maxInstances: 2,
     enforceAppCheck: false,
   },
-  async (req) => {
+  explained(async (req) => {
     // ---- authorisation ----------------------------------------------------
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
 
@@ -304,5 +305,5 @@ export const sendInvites = onCall(
       skipped: emails.length - onRoster.length,
       dailyQuota,
     };
-  }
+  })
 );

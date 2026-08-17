@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   sendMany, announcementEmail, inviteEmail, bodyExtract, getTransport,
 } from '../functions/email.js';
+import { explained, HttpsError } from '../functions/callable.js';
 
 /* ---- fetch mock ---------------------------------------------------------- */
 
@@ -304,5 +305,52 @@ describe('mailLog idempotency guard', { skip: !(await emulatorUp()) && 'Firestor
     const second = await create();
     assert.equal(second.status, 409,
       `second create must be rejected as ALREADY_EXISTS, got ${second.status}`);
+  });
+});
+
+/* ---- callable error translation ------------------------------------------ */
+
+// The client SDK reports the bare code "internal" for two very different
+// situations: the function crashed, or the request never arrived. Those need
+// opposite fixes. explained() removes the first case, so a bare "internal" in
+// the browser can only mean the second.
+describe('explained() — no callable failure surfaces as bare "internal"', () => {
+  test('an unexpected throw becomes a message a teacher can act on', async () => {
+    const wrapped = explained(async () => { throw new TypeError('sender is not a function'); });
+
+    await assert.rejects(wrapped({}), (e) => {
+      // Must be a real HttpsError, not the raw throw leaking through — that is
+      // the case the browser renders as the useless bare code.
+      assert.ok(e instanceof HttpsError, `expected HttpsError, got ${e?.constructor?.name}`);
+      assert.equal(e.code, 'unknown');
+      assert.notEqual(e.code, 'internal');
+      assert.match(e.message, /Server error/);
+      assert.match(e.message, /sender is not a function/);
+      return true;
+    });
+  });
+
+  test('a deliberate HttpsError passes through untouched', async () => {
+    const original = new HttpsError('permission-denied', 'Teachers only.');
+    const wrapped = explained(async () => { throw original; });
+
+    await assert.rejects(wrapped({}), (e) => {
+      assert.equal(e, original);
+      assert.equal(e.message, 'Teachers only.');
+      return true;
+    });
+  });
+
+  test('a successful handler is returned unchanged', async () => {
+    assert.deepEqual(await explained(async () => ({ sent: 3 }))({}), { sent: 3 });
+  });
+
+  test('a non-Error throw still yields a readable message', async () => {
+    const wrapped = explained(async () => { throw 'plain string blew up'; });
+    await assert.rejects(wrapped({}), (e) => {
+      assert.ok(e instanceof HttpsError);
+      assert.match(e.message, /plain string blew up/);
+      return true;
+    });
   });
 });
