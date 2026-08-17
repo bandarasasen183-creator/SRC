@@ -30,7 +30,8 @@ function git(args, fallback = 'unknown') {
 }
 
 const sha = git('rev-parse --short HEAD');
-const dirty = git('status --porcelain') !== '';
+const changes = git('status --porcelain', '').split('\n').filter(Boolean);
+const dirty = changes.length > 0;
 
 const info = {
   sha,
@@ -51,8 +52,12 @@ console.log(
   ` on ${info.branch} — "${info.subject}"`
 );
 if (dirty) {
-  console.log(
-    'WARNING: you have uncommitted changes. What you deploy will not match ' +
-    'the commit above. Commit and push first if you want them to line up.'
-  );
+  // A warning that doesn't say what is dirty is unactionable, so name the
+  // files. "??" means untracked — usually harmless leftovers, but they get
+  // deployed too, which is worth seeing.
+  console.log('WARNING: the working tree is not clean, so what you deploy does');
+  console.log('not exactly match the commit above. Files:');
+  for (const line of changes.slice(0, 12)) console.log(`    ${line}`);
+  if (changes.length > 12) console.log(`    …and ${changes.length - 12} more`);
+  console.log('  ("??" = untracked. Harmless if it is scratch work, but it ships.)');
 }

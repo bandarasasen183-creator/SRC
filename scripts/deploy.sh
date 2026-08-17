@@ -33,6 +33,58 @@ if command -v firebase >/dev/null 2>&1; then
 fi
 green "firebase CLI ready"
 
+# ---- 1b. is this checkout actually up to date? ------------------------------
+#
+# This exists because of a real incident. `git pull` failed with
+#   fatal: Need to specify how to reconcile divergent branches
+# and the deploy, pasted on the next line rather than joined with &&, ran
+# anyway and shipped the unchanged working tree. Three rounds of "your fixes
+# aren't coming through" were all this. A deploy that silently ships stale
+# code is worse than one that refuses.
+
+step "Checking this checkout is up to date"
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+
+if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
+  warn "Not on a branch — skipping the sync check."
+elif ! git fetch origin "$BRANCH" --quiet 2>/dev/null; then
+  warn "Could not reach GitHub — deploying whatever is on disk."
+else
+  LOCAL="$(git rev-parse HEAD)"
+  REMOTE="$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")"
+  BASE="$(git merge-base HEAD "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")"
+
+  if [ "$LOCAL" = "$REMOTE" ]; then
+    green "up to date with origin/$BRANCH ($(git rev-parse --short HEAD))"
+  else
+    if [ "$LOCAL" = "$BASE" ]; then
+      err "This checkout is BEHIND origin/$BRANCH."
+      echo "   You would deploy old code. Nothing has been deployed."
+    else
+      err "This checkout has DIVERGED from origin/$BRANCH."
+      echo "   Local commits GitHub doesn't have: $(git rev-list --count "origin/$BRANCH"..HEAD)"
+      echo "   Remote commits you don't have:     $(git rev-list --count HEAD.."origin/$BRANCH")"
+    fi
+    echo
+    echo "   To take exactly what is on GitHub and discard local changes:"
+    echo
+    echo "       git reset --hard origin/$BRANCH"
+    echo
+    read -rp "   Run that now and continue? [y/N] " SYNC
+    case "$SYNC" in
+      [yY]*)
+        git reset --hard "origin/$BRANCH"
+        green "now at $(git rev-parse --short HEAD)"
+        ;;
+      *)
+        err "Stopping. Nothing was deployed."
+        exit 1
+        ;;
+    esac
+  fi
+fi
+
 # ---- 2. sign in -------------------------------------------------------------
 
 step "Checking Firebase sign-in"
