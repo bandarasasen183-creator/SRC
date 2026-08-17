@@ -21,7 +21,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, modal, renderBody,
-  todayISO, fmtDate, icon, downloadFile,
+  todayISO, fmtDate, icon, downloadFile, markdownToolbar,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 import { csvCell, downloadCsv } from './forms.js';
@@ -420,11 +420,13 @@ function openEventComposer(existing, onSaved) {
       <input type="text" id="evLoc" maxlength="120" placeholder="e.g. School hall">
     </label>
 
-    <label class="field">
+    <!-- A div, not a label: clicking a toolbar button inside a <label> would
+         re-focus the textarea and blow away the selection we just set. -->
+    <div class="field">
       <span class="lbl">Details</span>
       <textarea id="evDesc" rows="4" maxlength="5000"
-        placeholder="What should people know? Same formatting as announcements."></textarea>
-    </label>
+        placeholder="What should people know?"></textarea>
+    </div>
 
     <label class="switch">
       <input type="checkbox" id="evOpen" checked>
@@ -440,6 +442,9 @@ function openEventComposer(existing, onSaved) {
   `);
 
   const r = m.root;
+  const descEl = $('#evDesc', r);
+  descEl.parentNode.insertBefore(markdownToolbar(descEl), descEl);
+
   $('#evDate', r).value = existing?.date || selectedDate || todayISO();
   if (editing) {
     $('#evTitle', r).value = existing.title || '';

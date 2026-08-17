@@ -279,11 +279,20 @@ export const sendInvites = onCall(
       }
     }
 
-    const { sent, failed, dailyQuota } = await sendMany(
-      withLinks,
-      (r) => inviteEmail({ signInLink: r.signInLink, appUrl: base, invitedBy }),
-      { apiKey: key, sender: sender(), provider: EMAIL_PROVIDER.value(), maxAttempts: 2 }
-    );
+    // Anything unexpected in here would otherwise reach the browser as the bare
+    // code "internal", which tells a teacher nothing. Turn it into a sentence.
+    let sent; let failed; let dailyQuota;
+    try {
+      ({ sent, failed, dailyQuota } = await sendMany(
+        withLinks,
+        (r) => inviteEmail({ signInLink: r.signInLink, appUrl: base, invitedBy }),
+        { apiKey: key, sender: sender(), provider: EMAIL_PROVIDER.value(), maxAttempts: 2 }
+      ));
+    } catch (e) {
+      logger.error('Invite send failed outright', e);
+      throw new HttpsError('unknown',
+        `The email provider could not be reached: ${String(e?.message || e).slice(0, 200)}`);
+    }
 
     const allFailed = [...failed, ...linkFailures];
     logger.info(`Invites: ${sent.length} sent, ${allFailed.length} failed.`);

@@ -136,6 +136,10 @@ const ICONS = {
   key: '<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3"/>',
   contrast: '<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" stroke="none"/>',
   clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+  bold: '<path d="M6 4h7a4 4 0 0 1 0 8H6z"/><path d="M6 12h8a4 4 0 0 1 0 8H6z"/>',
+  italic: '<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  'list-ol': '<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3a1 1 0 0 0-2 0"/>',
 };
 
 /** Inline stroke icon. Always use this instead of an emoji. */
@@ -376,4 +380,78 @@ export function friendlyError(e) {
   // A bare code as the message ("internal") is not an explanation.
   if (!msg || msg === code || msg.length < 12) return 'Something went wrong. Try again.';
   return msg;
+}
+
+/* ---- markdown toolbar -------------------------------------------------------
+   One implementation used by the announcement composer and the event
+   description, so the two behave identically. Returns a wired DOM element —
+   the caller just inserts it above the textarea.
+--------------------------------------------------------------------------- */
+
+const MD_BUTTONS = [
+  { key: 'bold', ic: 'bold', title: 'Bold' },
+  { key: 'italic', ic: 'italic', title: 'Italic' },
+  { key: 'link', ic: 'link', title: 'Insert link' },
+  { key: 'bullet', ic: 'list', title: 'Bullet list' },
+  { key: 'number', ic: 'list-ol', title: 'Numbered list' },
+];
+
+export function markdownToolbar(textarea, onChange) {
+  const bar = h(`<div class="mdbar" role="group" aria-label="Text formatting">
+    ${MD_BUTTONS.map((b) => `
+      <button type="button" class="mdbtn" data-md="${b.key}"
+              title="${b.title}" aria-label="${b.title}">${icon(b.ic, 16)}</button>`).join('')}
+  </div>`);
+
+  bar.querySelectorAll('[data-md]').forEach((btn) => {
+    btn.onclick = () => {
+      const kind = btn.dataset.md;
+      const s = textarea.selectionStart;
+      const e = textarea.selectionEnd;
+      const sel = textarea.value.slice(s, e);
+
+      let out;
+      let selectFrom;
+      let selectTo;
+      let from = s;
+      let to = e;
+
+      if (kind === 'bold' || kind === 'italic') {
+        const mark = kind === 'bold' ? '**' : '*';
+        const word = sel || (kind === 'bold' ? 'bold text' : 'italic text');
+        out = `${mark}${word}${mark}`;
+        selectFrom = s + mark.length;
+        selectTo = selectFrom + word.length;
+      } else if (kind === 'link') {
+        const label = sel || 'link text';
+        out = `[${label}](https://)`;
+        // Land the caret inside the URL — that is what you type next.
+        selectFrom = s + label.length + 3 + 8;
+        selectTo = selectFrom;
+      } else {
+        // A list marker belongs at the start of a line, so grow the range out
+        // to whole lines first. Otherwise selecting a word mid-sentence and
+        // hitting Bullet would drop "- " into the middle of it.
+        const v = textarea.value;
+        from = v.lastIndexOf('\n', s - 1) + 1;
+        to = v.indexOf('\n', e);
+        if (to === -1) to = v.length;
+
+        const lines = (v.slice(from, to) || 'item').split('\n');
+        out = lines
+          .map((l, i) => (kind === 'bullet' ? `- ${l}` : `${i + 1}. ${l}`))
+          .join('\n');
+        selectFrom = from + (kind === 'bullet' ? 2 : 3);
+        selectTo = selectFrom + lines[0].length;
+      }
+
+      textarea.setRangeText(out, from, to, 'end');
+      textarea.focus();
+      textarea.setSelectionRange(selectFrom, selectTo);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      onChange?.();
+    };
+  });
+
+  return bar;
 }

@@ -161,6 +161,30 @@ try {
   await t.click('#newPost');
   await t.waitForSelector('#cTitle');
   await t.fill('#cTitle', 'SRC meeting moved to Thursday');
+
+  // Formatting toolbar: the buttons must actually edit the textarea, and the
+  // live preview must follow. Typing raw markdown afterwards overwrites this.
+  check('composer shows a formatting toolbar', await t.isVisible('.mdbar .mdbtn[data-md="bold"]'));
+  check('the toolbar uses icons, not letters',
+    await t.$eval('.mdbar [data-md="bold"]', (b) => !!b.querySelector('svg') && !b.textContent.trim()));
+  await t.fill('#cBody', 'ideas');
+  await t.$eval('#cBody', (el) => el.setSelectionRange(0, 5));
+  await t.click('.mdbar [data-md="bold"]');
+  check('Bold wraps the selection in **',
+    (await t.$eval('#cBody', (el) => el.value)) === '**ideas**');
+  check('the selected word stays selected after Bold',
+    (await t.$eval('#cBody', (el) => el.value.slice(el.selectionStart, el.selectionEnd))) === 'ideas');
+  // #cPreview lives inside a collapsed <details>, so assert on its content
+  // rather than its visibility.
+  check('the preview updates from a toolbar click',
+    await t.$eval('#cPreview', (el) => el.innerHTML.includes('<strong>ideas</strong>')));
+  // Bullet must reach the start of the line even though the selection is the
+  // word "ideas" sitting between the ** markers.
+  await t.click('.mdbar [data-md="bullet"]');
+  check('Bullet list prefixes the whole line, not the selection',
+    (await t.$eval('#cBody', (el) => el.value)) === '- **ideas**');
+  await t.screenshot({ path: `${SHOTS}/04a-mdbar.png` });
+
   await t.fill('#cBody', 'Bring your **ideas**.\n\n- Fundraiser\n- Uniform survey\n\nDetails: [the plan](https://example.com/plan)');
   await toggle(t, '#cAttach', true);
   await t.waitForSelector('#fbTitle');
@@ -343,6 +367,9 @@ try {
   await t.waitForSelector('#evTitle');
   await t.fill('#evTitle', 'SRC movie night');
   await t.fill('#evLoc', 'School hall');
+  check('the event description has the same formatting toolbar',
+    await t.isVisible('#evDesc') && await t.$eval('#evDesc',
+      (el) => !!el.previousElementSibling?.classList.contains('mdbar')));
   await t.fill('#evDesc', 'Bring snacks and a pillow.');
   await t.click('#evSave');
   await t.waitForTimeout(2000);

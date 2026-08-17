@@ -6,7 +6,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, modal, renderBody, todayISO,
-  confirmDialog, fmtDate, icon,
+  confirmDialog, fmtDate, icon, markdownToolbar,
 } from './ui.js';
 import { state } from './state.js';
 import { formBuilder } from './forms.js';
@@ -31,17 +31,8 @@ export function openComposer(existing, onSaved) {
 
     <div class="field">
       <span class="lbl">Body</span>
-      <div class="btn-row" style="margin-bottom:6px">
-        <button type="button" class="btn subtle sm" data-md="bold"><strong>B</strong></button>
-        <button type="button" class="btn subtle sm" data-md="italic"><em>I</em></button>
-        <button type="button" class="btn subtle sm" data-md="link">Link</button>
-        <button type="button" class="btn subtle sm" data-md="bullet">• List</button>
-        <button type="button" class="btn subtle sm" data-md="number">1. List</button>
-      </div>
       <textarea id="cBody" rows="7" maxlength="20000"
-        placeholder="What's happening?&#10;&#10;**bold**, *italic*, [link text](https://…), - bullets"></textarea>
-      <span class="help">Formatting: <code>**bold**</code>, <code>*italic*</code>,
-        <code>[text](https://…)</code>, <code>- bullet</code>, <code>1. numbered</code></span>
+        placeholder="What's happening?"></textarea>
     </div>
 
     <details style="margin-bottom:14px">
@@ -128,23 +119,8 @@ export function openComposer(existing, onSaved) {
   updatePreview();
 
   // ---- markdown toolbar --------------------------------------------------
-  r.querySelectorAll('[data-md]').forEach((b) => {
-    b.onclick = () => {
-      const kind = b.dataset.md;
-      const s = bodyEl.selectionStart, e = bodyEl.selectionEnd;
-      const sel = bodyEl.value.slice(s, e);
-      let out, caret;
-      if (kind === 'bold') { out = `**${sel || 'bold text'}**`; caret = s + 2; }
-      else if (kind === 'italic') { out = `*${sel || 'italic text'}*`; caret = s + 1; }
-      else if (kind === 'link') { out = `[${sel || 'link text'}](https://)`; caret = s + (sel || 'link text').length + 3; }
-      else if (kind === 'bullet') { out = (sel || 'item').split('\n').map((l) => `- ${l}`).join('\n'); caret = s + 2; }
-      else { out = (sel || 'item').split('\n').map((l, i) => `${i + 1}. ${l}`).join('\n'); caret = s + 3; }
-      bodyEl.setRangeText(out, s, e, 'end');
-      if (!sel) bodyEl.setSelectionRange(caret, caret + (kind === 'bold' ? 9 : kind === 'italic' ? 11 : 0));
-      bodyEl.focus();
-      updatePreview();
-    };
-  });
+  // Buttons instead of a line of raw syntax nobody wants to memorise.
+  bodyEl.parentNode.insertBefore(markdownToolbar(bodyEl, updatePreview), bodyEl);
 
   // ---- attach form toggle ------------------------------------------------
   attachEl.addEventListener('change', () => {
