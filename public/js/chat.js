@@ -16,7 +16,7 @@ import {
   onSnapshot, query, orderBy, limit, serverTimestamp,
 } from './fb.js';
 import {
-  esc, h, $, toast, friendlyError, confirmDialog, fmtWhen, icon, renderBody,
+  esc, h, $, toast, friendlyError, confirmDialog, fmtWhen, icon, renderBody, avatar, skeleton,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 
@@ -43,7 +43,7 @@ export function renderChat(mount) {
         Everyone on the SRC can see this, and every message shows your real name.
         Teachers can remove anything.
       </div>
-      <div id="chatList" class="chat-list"><div class="spinner"></div></div>
+      <div id="chatList" class="chat-list">${skeleton(2)}</div>
       <form class="chat-compose" id="chatForm">
         <textarea id="chatText" rows="1" maxlength="2000" placeholder="Message the SRC…"
                   aria-label="Message"></textarea>
@@ -135,6 +135,7 @@ function bubble(m, prev) {
   const el = h(`
     <div class="msg${mine ? ' mine' : ''}${grouped ? ' grouped' : ''}">
       ${grouped ? '' : `<div class="msg-who">
+        ${mine ? '' : avatar(m.authorName, 22)}
         <span class="who">${esc(m.authorName || 'Unknown')}</span>
         <span class="when">${esc(fmtWhen(m.createdAt))}</span>
       </div>`}

@@ -272,3 +272,52 @@ describe('the shipped calendar is importable as-is', () => {
     assert.ok(!open.some((t) => /Changemakers/.test(t)));
   });
 });
+
+describe('parseEventImport — volunteer targets and attendee visibility', () => {
+  const one = (o) => JSON.stringify([o]);
+  const ok = { title: 'Game', date: '2026-08-21' };
+
+  test('a target comes through', () => {
+    assert.equal(parseEventImport(one({ ...ok, needed: 10 })).events[0].needed, 10);
+  });
+
+  test('no target means zero, not undefined', () => {
+    assert.equal(parseEventImport(one(ok)).events[0].needed, 0);
+  });
+
+  test('the target is bounded exactly as the rules bound it', () => {
+    for (const bad of [-1, 1000, 2.5, 'ten', true, []]) {
+      assert.match(parseEventImport(one({ ...ok, needed: bad })).errors[0] || '',
+        /whole number from 0 to 999/, `accepted needed=${bad}`);
+    }
+    assert.deepEqual(parseEventImport(one({ ...ok, needed: 999 })).errors, []);
+  });
+
+  test('an explicit null target means no target, not an error', () => {
+    // JSON null reads as "absent". Failing a hand-edited file over it would be
+    // pedantry, not safety.
+    const { events, errors } = parseEventImport(one({ ...ok, needed: null }));
+    assert.deepEqual(errors, []);
+    assert.equal(events[0].needed, 0);
+  });
+
+  test('attendees are hidden unless explicitly true', () => {
+    assert.equal(parseEventImport(one(ok)).events[0].attendeesVisible, false);
+    assert.equal(parseEventImport(one({ ...ok, attendeesVisible: 'yes' })).events[0].attendeesVisible, false);
+    assert.equal(parseEventImport(one({ ...ok, attendeesVisible: true })).events[0].attendeesVisible, true);
+  });
+
+  test('the football game asks for ten and shows names', () => {
+    const file = readFileSync(new URL('../docs/classroom-events.json', import.meta.url), 'utf8');
+    const game = parseEventImport(file).events.find((e) => /Football game/.test(e.title));
+    assert.equal(game.needed, 10, 'the post says ten students');
+    assert.equal(game.attendeesVisible, true, 'people need to see how many more are needed');
+  });
+
+  test('events with no volunteering keep names private', () => {
+    const file = readFileSync(new URL('../docs/classroom-events.json', import.meta.url), 'utf8');
+    for (const e of parseEventImport(file).events.filter((x) => !x.signupOpen)) {
+      assert.equal(e.attendeesVisible, false, `${e.title} exposes names for no reason`);
+    }
+  });
+});

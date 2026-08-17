@@ -625,11 +625,12 @@ try {
   await s.click('.slot:first-child .slot-side button');
   await s.waitForTimeout(2000);
   check('a student can put their own name down', await s.isVisible('.slot.mine'));
-  check('the name shows on the slot', await s.isVisible('.slot.mine .chip'));
+  check('the name shows on the slot with an avatar',
+    await s.isVisible('.slot.mine .who-chip .avatar'));
 
   await t.click('[data-route="rosters"]');
   await t.waitForTimeout(1800);
-  check('the teacher sees who signed up', await t.isVisible('.slot .chip'));
+  check('the teacher sees who signed up', await t.isVisible('.slot .who-chip'));
 
   const rosterDenied = await s.evaluate(async () => {
     const { db, doc, setDoc } = await import('/js/fb.js');
@@ -645,6 +646,61 @@ try {
   check('a student cannot sign somebody else up',
     rosterDenied.includes('permission-denied'), rosterDenied);
   await s.screenshot({ path: `${SHOTS}/19-rosters.png`, fullPage: true });
+
+  /* ---- 7e. volunteer targets and visible attendees ----------------------- */
+  await t.click('[data-route="events"]');
+  await t.waitForSelector('#newEvent');
+  await t.click('#newEvent');
+  await t.waitForSelector('#evTitle');
+  await t.fill('#evTitle', 'Football game volunteers');
+  await t.fill('#evDate', '2026-08-21');
+  await t.fill('#evNeeded', '10');
+  await toggle(t, '#evVisible', true);
+  await t.click('#evSave');
+  await t.waitForTimeout(2200);
+  check('an event can ask for a number of volunteers',
+    await t.isVisible('text=/10 volunteers needed/'));
+
+  await s.click('[data-route="events"]');
+  await s.waitForTimeout(1800);
+  // The All/Mine filter is deliberately remembered across visits, and an
+  // earlier step left this student on "Mine".
+  await s.click('.seg button[data-f="all"]');
+  await s.waitForTimeout(800);
+  check('a student sees how many are needed',
+    await s.isVisible('text=/10 volunteers needed/'));
+  await s.click('text=Football game volunteers');
+  await s.waitForTimeout(1200);
+  await s.click('#evSignup');
+  await s.waitForTimeout(2200);
+
+  // Reopen so the attendee list is fetched fresh.
+  await s.keyboard.press('Escape');
+  await s.waitForTimeout(400);
+  await s.click('text=Football game volunteers');
+  await s.waitForTimeout(1800);
+  check('an opted-in event shows who is coming',
+    await s.isVisible('.attendees .who-chip'));
+  check('and how many more are needed',
+    await s.isVisible('text=/1 of 10 — 9 more needed/'));
+  check('with a progress meter', await s.isVisible('.attendees .meter'));
+  await s.screenshot({ path: `${SHOTS}/21-volunteers.png`, fullPage: true });
+  await s.keyboard.press('Escape');
+  await s.waitForTimeout(400);
+
+  // The default must stay private. STUDENT2 has never been able to list
+  // signups, and an event without the opt-in must still refuse.
+  const hiddenDenied = await s.evaluate(async () => {
+    const { db, collection, getDocs, addDoc, serverTimestamp } = await import('/js/fb.js');
+    // A private event created by a teacher elsewhere in this run.
+    const evs = await getDocs(collection(db, 'events'));
+    const priv = evs.docs.find((d) => d.data().attendeesVisible !== true);
+    if (!priv) return 'no private event to test';
+    try { await getDocs(collection(db, 'events', priv.id, 'signups')); return 'ALLOWED'; }
+    catch (e) { return e.code || 'denied'; }
+  });
+  check('an event without the opt-in still hides its attendees',
+    hiddenDenied.includes('permission-denied'), hiddenDenied);
 
   /* ---- 8a. importing the Classroom archive -------------------------------- */
   // The real docs/classroom-import.json, through the real UI.

@@ -21,6 +21,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, modal, icon, downloadFile,
+  avatarChip, skeleton,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 import { csvCell } from './forms.js';
@@ -52,7 +53,7 @@ export async function renderRosters(mount) {
 async function refresh(mount) {
   const listEl = $('#rosterList', mount);
   if (!listEl) return;
-  listEl.replaceChildren(h('<div class="spinner"></div>'));
+  listEl.replaceChildren(h(`<div>${skeleton(2)}</div>`));
 
   try {
     const snap = await getDocs(collection(db, 'rosters'));
@@ -156,7 +157,7 @@ function slotRow(r, slot, people, mount) {
         <div class="slot-label">${esc(slot.label || slot.id)}</div>
         <div class="slot-people">${
           people.length
-            ? people.map((p) => `<span class="chip static">${esc(p.name || 'Someone')}</span>`).join('')
+            ? people.map((p) => avatarChip(p.name)).join('')
             : '<span class="small muted">Nobody yet</span>'
         }</div>
       </div>

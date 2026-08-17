@@ -688,3 +688,125 @@ tbody tr:hover { background: var(--hover); }
 .comment.archived .meta { margin-bottom: 2px; }
 .comment.archived .who { font-weight: 600; color: var(--text); }
 .comment.archived .body p:last-child { margin-bottom: 0; }
+
+/* =============================================================================
+   Avatars, meters, event tags
+   ========================================================================== */
+
+.avatar {
+  display: inline-grid; place-items: center; flex: none;
+  border-radius: 50%; color: #fff; font-weight: 700; line-height: 1;
+  letter-spacing: .02em; user-select: none;
+}
+
+.who-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.who-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 3px; border-radius: 999px;
+  background: var(--chip-bg); color: var(--chip-text); font-size: .82rem;
+}
+
+/* Progress towards "we need ten students". */
+.meter {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--chip-bg);
+}
+.meter > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--brand);
+  transition: width .5s cubic-bezier(.22, 1, .36, 1);
+}
+.ok { color: var(--brand); font-weight: 600; }
+
+.event-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.when-pill, .need-pill {
+  font-size: .74rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: var(--chip-bg); color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.when-pill.now { background: var(--brand); color: var(--brand-text); }
+.when-pill.soon { background: var(--brand-tint); color: var(--brand); }
+.when-pill.past { opacity: .6; }
+.need-pill { background: var(--warn-bg); color: var(--warn); }
+.need-pill.done { background: var(--brand-tint); color: var(--brand); }
+.attendees { margin-top: 12px; }
+
+/* =============================================================================
+   Motion
+   -----------------------------------------------------------------------------
+   Short, and only where it explains something: what just arrived, what is
+   loading, what responded to a tap. Nothing loops, nothing decorates.
+   Everything here is switched off under prefers-reduced-motion at the bottom.
+   ========================================================================== */
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shimmer { to { background-position-x: -200%; } }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(24,128,56,.45); } 100% { box-shadow: 0 0 0 8px rgba(24,128,56,0); } }
+
+/* A new view fades in rather than snapping. */
+#view > * { animation: fade .18s ease both; }
+
+/* Cards arrive in sequence, so the eye follows the list down. Capped at 8 —
+   beyond that the last card would wait long enough to feel broken. */
+.card, .event-row, .slot {
+  animation: rise .28s cubic-bezier(.22, 1, .36, 1) both;
+}
+.card:nth-child(1), .event-row:nth-child(1), .slot:nth-child(1) { animation-delay: 0ms; }
+.card:nth-child(2), .event-row:nth-child(2), .slot:nth-child(2) { animation-delay: 35ms; }
+.card:nth-child(3), .event-row:nth-child(3), .slot:nth-child(3) { animation-delay: 70ms; }
+.card:nth-child(4), .event-row:nth-child(4), .slot:nth-child(4) { animation-delay: 105ms; }
+.card:nth-child(5), .event-row:nth-child(5), .slot:nth-child(5) { animation-delay: 140ms; }
+.card:nth-child(6), .event-row:nth-child(6), .slot:nth-child(6) { animation-delay: 175ms; }
+.card:nth-child(7), .event-row:nth-child(7), .slot:nth-child(7) { animation-delay: 210ms; }
+.card:nth-child(n+8), .event-row:nth-child(n+8), .slot:nth-child(n+8) { animation-delay: 245ms; }
+
+.modal { animation: pop .18s cubic-bezier(.22, 1, .36, 1) both; }
+.modal-bg { animation: fade .14s ease both; }
+.toast { animation: slide-up .22s cubic-bezier(.22, 1, .36, 1) both; }
+.msg { animation: rise .2s ease both; }
+.chip { animation: pop .14s ease both; }
+.empty { animation: pop .3s cubic-bezier(.22, 1, .36, 1) both; }
+
+/* Buttons acknowledge a tap. 60ms, so it registers without feeling laggy. */
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn { transition: background .12s ease, transform .06s ease, border-color .12s ease; }
+
+.tab { transition: color .12s ease, background .12s ease; }
+.tab[aria-current="page"] { animation: fade .2s ease both; }
+
+/* Today's date on the calendar breathes once on arrival, so it is findable. */
+.cal-cell.today { animation: ping .9s ease-out 1; }
+
+.event-row, .slot, .roster-row { transition: background .12s ease; }
+.event-row:hover { background: var(--hover); }
+
+/* Skeleton placeholders — a grey shape the size of the thing that is coming
+   reads as "loading" far better than a spinner floating in space. */
+.skel {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--chip-bg) 40%, var(--surface-2) 50%, var(--chip-bg) 60%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+.skel-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px; margin-bottom: 14px; background: var(--surface);
+}
+.skel-line { height: 12px; margin-bottom: 10px; }
+.skel-line.title { height: 18px; width: 55%; margin-bottom: 14px; }
+.skel-line.short { width: 35%; margin-bottom: 0; }
+
+/* Anyone who has asked their device to calm down gets no motion at all. This
+   is not decoration worth overriding an accessibility setting for. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skel { background: var(--chip-bg); }
+}

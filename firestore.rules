@@ -257,7 +257,12 @@ service cloud.firestore {
         && incoming().date is string
         && incoming().date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
         && incoming().description is string
-        && incoming().description.size() <= 5000;
+        && incoming().description.size() <= 5000
+        // How many helpers are wanted, e.g. "ten students in full uniform".
+        && (!('needed' in incoming())
+            || (incoming().needed is int
+                && incoming().needed >= 0
+                && incoming().needed <= 999));
 
       allow update: if isTeacher()
         && incoming().title is string
@@ -268,16 +273,25 @@ service cloud.firestore {
       allow delete: if isTeacher();
 
       // ---- sign-ups -------------------------------------------------------
-      // Same privacy shape as form responses: a student sees their own,
-      // teachers see everyone. get/list split for the same reason (a merged
-      // `read` would let a student list the whole collection).
+      // Private by default, like form responses: you see your own, teachers see
+      // everyone. The get/list split matters — a merged `read` would let any
+      // student list the whole collection.
+      //
+      // A teacher can opt one event into showing its attendees, which is how
+      // volunteering actually works: "Bella's in, we need nine more" only helps
+      // if people can see it. Opt-in per event, never the default, and never
+      // something a student can switch on for themselves.
       match /signups/{uid} {
         function event() {
           return get(/databases/$(database)/documents/events/$(eventId)).data;
         }
 
         allow get: if isMember() && (request.auth.uid == uid || isTeacher());
-        allow list: if isTeacher();
+
+        // Teachers always. Everyone else only when the teacher has opted THIS
+        // event into showing its attendees.
+        allow list: if isTeacher()
+          || (isMember() && event().attendeesVisible == true);
 
         // Sign up as yourself, under your real name, while sign-ups are open.
         allow create: if isMember()

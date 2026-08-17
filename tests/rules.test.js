@@ -662,6 +662,62 @@ describe('events and sign-ups', () => {
     await assertFails(getDoc(doc(db, 'events', 'ev_open', 'signups', OTHER_UID)));
   });
 
+  test('a volunteer target is allowed but bounded', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    const base = {
+      title: 'Football game', date: '2026-08-21', description: 'help out',
+      signupOpen: true, createdBy: TEACHER_UID, createdAt: 1,
+    };
+    await assertSucceeds(addDoc(collection(db, 'events'), { ...base, needed: 10 }));
+    await assertFails(addDoc(collection(db, 'events'), { ...base, needed: -1 }));
+    await assertFails(addDoc(collection(db, 'events'), { ...base, needed: 1000 }));
+    await assertFails(addDoc(collection(db, 'events'), { ...base, needed: 'ten' }));
+  });
+
+  test('attendees stay hidden unless the teacher opts the event in', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const admin = ctx.firestore();
+      await setDoc(doc(admin, 'events', 'ev_private'), {
+        title: 'Private', date: '2026-09-01', description: '', signupOpen: true,
+        createdBy: TEACHER_UID, createdAt: 1,
+      });
+      await setDoc(doc(admin, 'events', 'ev_private', 'signups', OTHER_UID), {
+        uid: OTHER_UID, name: 'Sarah Lee', signedUpAt: 1,
+      });
+      await setDoc(doc(admin, 'events', 'ev_open'), {
+        title: 'Volunteers', date: '2026-09-02', description: '', signupOpen: true,
+        attendeesVisible: true, createdBy: TEACHER_UID, createdAt: 1,
+      });
+      await setDoc(doc(admin, 'events', 'ev_open', 'signups', OTHER_UID), {
+        uid: OTHER_UID, name: 'Sarah Lee', signedUpAt: 1,
+      });
+    });
+
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    // Default stays private — this is the pre-existing guarantee.
+    await assertFails(getDocs(collection(db, 'events', 'ev_private', 'signups')));
+    await assertFails(getDoc(doc(db, 'events', 'ev_private', 'signups', OTHER_UID)));
+
+    // Opted in: everyone can see who is coming, which is the whole point of
+    // "Bella's in, we need nine more".
+    await assertSucceeds(getDocs(collection(db, 'events', 'ev_open', 'signups')));
+  });
+
+  test('a student cannot make attendees visible on an event', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(updateDoc(doc(db, 'events', 'ev_private'), { attendeesVisible: true }));
+  });
+
+  test('making attendees visible does NOT leak form responses', async () => {
+    // The same one-line change, applied to the wrong block, would have exposed
+    // every student's form answers. Assert the boundary directly.
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    // form_once really does hold another student's answers, so this is a
+    // denial on populated data rather than on an empty collection.
+    await assertFails(getDocs(collection(db, 'forms', 'form_once', 'responses')));
+    await assertFails(getDoc(doc(db, 'forms', 'form_once', 'responses', OTHER_UID)));
+  });
+
   test('teacher CAN list the signups', async () => {
     const db = as(TEACHER_UID, TEACHER_EMAIL);
     await assertSucceeds(getDocs(collection(db, 'events', 'ev_open', 'signups')));

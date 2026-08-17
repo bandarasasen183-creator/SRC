@@ -224,7 +224,11 @@ if (!SKIP_EVENTS) {
     events = parsed.events;
     console.log(C.green(`${events.length} events, earliest first`));
     for (const e of events) {
-      console.log(`  ${e.date}  ${e.title}${e.signupOpen ? C.dim(' — sign-ups open') : ''}`);
+      const bits = [];
+      if (e.signupOpen) bits.push('sign-ups open');
+      if (e.needed) bits.push(`${e.needed} needed`);
+      if (e.attendeesVisible) bits.push('names shown');
+      console.log(`  ${e.date}  ${e.title}${bits.length ? C.dim(` — ${bits.join(', ')}`) : ''}`);
     }
   }
 }
@@ -395,6 +399,8 @@ if (events.length) {
         location: e.location,
         description: e.description,
         signupOpen: e.signupOpen,
+        needed: e.needed,
+        attendeesVisible: e.attendeesVisible,
         createdBy: user.uid,          // the rules require this to be you
         createdByName: me.name,
         importedFrom: 'Google Classroom',

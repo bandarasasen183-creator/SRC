@@ -21,7 +21,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, modal, renderBody,
-  todayISO, fmtDate, icon, downloadFile,
+  todayISO, fmtDate, icon, downloadFile, avatarChip, skeleton,
 } from './ui.js';
 import { richEditor } from './editor.js';
 import { state, isTeacher } from './state.js';
@@ -47,6 +47,36 @@ function fmtTime(t) {
   if (Number.isNaN(H)) return '';
   const h12 = ((H + 11) % 12) + 1;
   return `${h12}:${pad(M || 0)}${H < 12 ? 'am' : 'pm'}`;
+}
+
+/**
+ * "today" / "tomorrow" / "in 4 days". A date on its own makes you count; this
+ * is the bit people actually want to know.
+ */
+function countdown(dateStr) {
+  const today = new Date(`${todayISO()}T12:00:00`);
+  const then = new Date(`${dateStr}T12:00:00`);
+  const days = Math.round((then - today) / 86400000);
+  if (days === 0) return { text: 'Today', cls: 'now' };
+  if (days === 1) return { text: 'Tomorrow', cls: 'soon' };
+  if (days === -1) return { text: 'Yesterday', cls: 'past' };
+  if (days < 0) return { text: `${-days} days ago`, cls: 'past' };
+  if (days <= 7) return { text: `In ${days} days`, cls: 'soon' };
+  return { text: `In ${days} days`, cls: '' };
+}
+
+/** "3 of 10 — 7 more needed", or null when the event has no target. */
+function volunteerStatus(ev, count) {
+  const needed = Number(ev.needed) || 0;
+  if (!needed) return null;
+  const have = Number.isFinite(count) ? count : null;
+  if (have === null) return { text: `${needed} volunteers needed`, pct: 0, short: needed };
+  const short = Math.max(0, needed - have);
+  return {
+    text: short ? `${have} of ${needed} — ${short} more needed` : `Full: ${have} of ${needed}`,
+    pct: Math.min(100, Math.round((have / needed) * 100)),
+    short,
+  };
 }
 
 function timeAndPlace(ev) {
@@ -138,7 +168,7 @@ function shiftMonth(dir, mount) {
 async function refresh(mount) {
   const listEl = $('#evList', mount);
   if (!listEl) return;
-  listEl.replaceChildren(h('<div class="spinner"></div>'));
+  listEl.replaceChildren(h(`<div>${skeleton(2)}</div>`));
   try {
     await Promise.all([loadMonth(), loadMySignups()]);
     drawGrid(mount);
@@ -224,12 +254,18 @@ function drawList(mount) {
   for (const ev of items) {
     const day = Number(ev.date.slice(8, 10));
     const dow = DOW[(new Date(ev.date + 'T12:00:00').getDay() + 6) % 7];
+    const cd = countdown(ev.date);
+    const need = volunteerStatus(ev, null);
     const row = h(`
       <div class="event-row" role="button" tabindex="0" aria-label="${esc(ev.title)}">
         <div class="event-date"><div class="d">${day}</div><div class="w">${dow}</div></div>
         <div class="grow">
           <div style="font-weight:600">${esc(ev.title)}</div>
           ${timeAndPlace(ev) ? `<div class="small muted">${esc(timeAndPlace(ev))}</div>` : ''}
+          <div class="event-tags">
+            <span class="when-pill ${cd.cls}">${esc(cd.text)}</span>
+            ${need ? `<span class="need-pill${need.short ? '' : ' done'}">${icon('users', 11)} ${esc(need.text)}</span>` : ''}
+          </div>
         </div>
         ${mySet.has(ev.id) ? `<span class="pill pin">${icon('check', 12)} Going</span>`
           : (ev.signupOpen ? `<span class="pill off">${icon('user-plus', 12)} Sign-up open</span>` : '')}
@@ -261,6 +297,7 @@ async function openEvent(ev, mount) {
     <div style="margin-top:14px">
       <button class="btn ghost sm" id="evIcs">${icon('download', 14)} Add to my calendar</button>
     </div>
+    <div id="evAttendees"></div>
     <div id="evSignupBox" style="margin-top:14px"></div>
     <div id="evTeacherBox"></div>
   `);
@@ -272,6 +309,30 @@ async function openEvent(ev, mount) {
   };
 
   const signupBox = m.root.querySelector('#evSignupBox');
+
+  // ---- who's coming -------------------------------------------------------
+  // Only when the teacher opted this event in. Otherwise the rules refuse the
+  // list and there is nothing to show, which is the intended default.
+  if (ev.attendeesVisible && !isTeacher()) {
+    const box = m.root.querySelector('#evAttendees');
+    try {
+      const snap = await getDocs(collection(db, 'events', ev.id, 'signups'));
+      const names = snap.docs.map((d) => d.data().name).filter(Boolean);
+      const need = volunteerStatus(ev, names.length);
+      box.replaceChildren(h(`
+        <div class="attendees">
+          <div class="row" style="margin-bottom:6px">
+            <strong class="grow small">${names.length ? `${names.length} coming` : 'Nobody yet'}</strong>
+            ${need ? `<span class="small ${need.short ? 'muted' : 'ok'}">${esc(need.text)}</span>` : ''}
+          </div>
+          ${need ? `<div class="meter"><i style="width:${need.pct}%"></i></div>` : ''}
+          <div class="who-chips">${names.map((n) => avatarChip(n)).join('')}</div>
+        </div>`));
+    } catch (e) {
+      console.error(e);
+      box.replaceChildren();
+    }
+  }
 
   // ---- my signup state ----------------------------------------------------
   if (ev.signupOpen) {
@@ -338,9 +399,13 @@ async function openEvent(ev, mount) {
       const inner = h(`
         <div>
           <div class="row" style="margin-bottom:8px">
-            <strong class="grow">${people.length} signed up</strong>
+            <strong class="grow">${people.length} signed up${
+              ev.needed ? ` of ${Number(ev.needed)}` : ''}</strong>
             ${people.length ? `<button class="btn subtle sm" id="evCsv">${icon('download', 14)} Export CSV</button>` : ''}
           </div>
+          ${(() => { const n = volunteerStatus(ev, people.length);
+            return n ? `<div class="meter" style="margin-bottom:10px"><i style="width:${n.pct}%"></i></div>
+              <p class="small ${n.short ? 'muted' : 'ok'}" style="margin:0 0 10px">${esc(n.text)}</p>` : ''; })()}
           ${people.length ? `
             <div class="tablewrap"><table>
               <thead><tr><th>Name</th><th>Year/Class</th></tr></thead>
@@ -428,6 +493,21 @@ function openEventComposer(existing, onSaved) {
       <div id="evDescMount"></div>
     </div>
 
+    <div class="row">
+      <label class="field grow">
+        <span class="lbl">Volunteers needed <span class="muted small">(optional)</span></span>
+        <input type="number" id="evNeeded" min="0" max="999" placeholder="e.g. 10">
+      </label>
+    </div>
+
+    <label class="switch">
+      <input type="checkbox" id="evVisible">
+      <span class="track"></span>
+      <span class="sw-label">Show who's coming
+        <span class="sw-sub">Everyone sees the names. Off by default — turn it on for
+          volunteer jobs, so people can see how many more are needed.</span></span>
+    </label>
+
     <label class="switch">
       <input type="checkbox" id="evOpen" checked>
       <span class="track"></span>
@@ -455,6 +535,8 @@ function openEventComposer(existing, onSaved) {
     $('#evEnd', r).value = existing.endTime || '';
     $('#evLoc', r).value = existing.location || '';
     $('#evOpen', r).checked = existing.signupOpen !== false;
+    $('#evVisible', r).checked = existing.attendeesVisible === true;
+    if (existing.needed) $('#evNeeded', r).value = String(existing.needed);
   }
 
   $('#evCancel', r).onclick = m.close;
@@ -473,6 +555,9 @@ function openEventComposer(existing, onSaved) {
       location: $('#evLoc', r).value.trim(),
       description: desc.getMarkdown(),
       signupOpen: $('#evOpen', r).checked,
+      attendeesVisible: $('#evVisible', r).checked,
+      // Must be an int for the rules; an empty box means no target.
+      needed: Math.max(0, Math.min(999, parseInt($('#evNeeded', r).value, 10) || 0)),
     };
 
     busy(btn, true, 'Saving…');

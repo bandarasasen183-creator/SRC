@@ -7,7 +7,7 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, renderBody, fmtDate, fmtWhen,
-  icon, todayISO,
+  icon, todayISO, skeleton,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 import {
@@ -50,7 +50,7 @@ export function renderFeed(mount) {
         <input type="text" id="feedSearch" class="grow" placeholder="Search announcements"
                autocomplete="off" aria-label="Search announcements">
       </label>
-      <div id="feedList"><div class="spinner"></div></div>
+      <div id="feedList">${skeleton(3)}</div>
     </div>
   `));
 

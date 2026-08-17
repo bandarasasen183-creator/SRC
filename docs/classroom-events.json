@@ -32,14 +32,17 @@
     "date": "2026-08-18",
     "location": "Library, Lower Level",
     "description": "Sessions 3 & 4. A council member will be there to listen and capture your ideas about what helps young people feel empowered, what barriers exist, and what you would like to see.\n\nThere are no right or wrong answers.",
-    "signupOpen": true
+    "signupOpen": true,
+    "attendeesVisible": true
   },
   {
     "title": "Football volunteers — briefing",
     "date": "2026-08-20",
     "location": "Student services",
     "description": "Session 5. Briefing for the leadership team helping at Friday's football game: QR codes, uniform, roles and responsibilities.\n\nIf you signed up for the game, come to this.",
-    "signupOpen": true
+    "signupOpen": true,
+    "needed": 10,
+    "attendeesVisible": true
   },
   {
     "title": "Football game — student volunteers",
@@ -48,7 +51,9 @@
     "endTime": "11:30",
     "location": "Bottom oval and MPC street entry",
     "description": "**Ten students needed, in full uniform.** Game starts 10am on the bottom oval.\n\n### Five at the MPC street entry\n\n- Meet the visiting team and show them to the MPC changerooms\n- QR code for coaches and parents to sign in\n- Show visitors where the toilets are, and walk them there during the game\n\n### Five at the bottom oval gate, near the cricket nets\n\n- Meet UHS parents and carers\n- QR code for visitors to register\n- Show them to the spectator area — northwestern side, they have been asked to bring folding chairs\n\nBriefing is Thursday session 5 at student services.",
-    "signupOpen": true
+    "signupOpen": true,
+    "needed": 10,
+    "attendeesVisible": true
   },
   {
     "title": "Outward Bound Leadership Camp (7–11 September)",
@@ -62,7 +67,9 @@
     "date": "2026-09-10",
     "location": "Dunn-Lewis Centre",
     "description": "Over 100 stalls celebrating local community organisations and volunteers, run by Community Connect Southern Shoalhaven.\n\n**Volunteers needed** to help run stalls, welcome guests, and run activities on the day. Put your name down here.",
-    "signupOpen": true
+    "signupOpen": true,
+    "needed": 6,
+    "attendeesVisible": true
   },
   {
     "title": "South Coast Changemakers Forum (27–29 November)",

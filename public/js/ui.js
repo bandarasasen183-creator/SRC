@@ -150,6 +150,59 @@ export function icon(name, size = 18, cls = '') {
   return `<svg class="ic${cls ? ' ' + cls : ''}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 }
 
+/**
+ * A grey placeholder shaped like the thing that is loading. Reads far better
+ * than a spinner floating in space, because the page does not jump when the
+ * real content lands.
+ */
+export function skeleton(rows = 3) {
+  return Array.from({ length: rows }, () => `
+    <div class="skel-card">
+      <div class="skel skel-line title"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line short"></div>
+    </div>`).join('');
+}
+
+/* ---- people ----------------------------------------------------------------
+   Initial-avatars. No uploads, no storage, no cost — just a coloured circle so
+   a wall of names becomes scannable.
+--------------------------------------------------------------------------- */
+
+// Deliberately muted and all legible against white text. A name always gets
+// the same colour, so people become recognisable at a glance.
+const AVATAR_HUES = [
+  '#1a73e8', '#188038', '#b06000', '#a8367f', '#5f6368',
+  '#0b8043', '#c5221f', '#7b4fb5', '#00796b', '#8d6e63',
+];
+
+export function initialsOf(name) {
+  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function avatarColour(name) {
+  const s = String(name || '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_HUES[hash % AVATAR_HUES.length];
+}
+
+/** A round initial-avatar. `size` in px. */
+export function avatar(name, size = 28) {
+  return `<span class="avatar" title="${esc(name || '')}" aria-hidden="true"
+    style="width:${size}px;height:${size}px;background:${avatarColour(name)};
+           font-size:${Math.round(size * 0.4)}px">${esc(initialsOf(name))}</span>`;
+}
+
+/** Avatar + name, for lists of people. */
+export function avatarChip(name) {
+  return `<span class="who-chip">${avatar(name, 22)}<span>${esc(name || 'Someone')}</span></span>`;
+}
+
 /** Trigger a client-side file download. */
 export function downloadFile(filename, text, mime = 'text/plain') {
   const blob = new Blob([text], { type: `${mime};charset=utf-8` });

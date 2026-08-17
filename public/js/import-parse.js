@@ -202,9 +202,30 @@ export function parseEventImport(text) {
       return;
     }
 
+    // null and undefined both mean "no target". Rejecting an explicit null
+    // would fail a hand-edited file for no real reason.
+    //
+    // Everything else must already BE a number. Coercing with Number() turned
+    // `true` into a target of 1 and `[]` into 0 — a wrong value read as a
+    // plausible one, which is worse than an error.
+    const rawNeeded = e.needed;
+    let needed = 0;
+    if (rawNeeded !== undefined && rawNeeded !== null) {
+      if (typeof rawNeeded !== 'number' || !Number.isInteger(rawNeeded)
+          || rawNeeded < 0 || rawNeeded > 999) {
+        errors.push(`${at}: "needed" must be a whole number from 0 to 999.`);
+        return;
+      }
+      needed = rawNeeded;
+    }
+
     events.push({
       title, date, description, location, startTime, endTime,
       signupOpen: e.signupOpen === true,
+      needed,
+      // Off unless explicitly asked for. Showing who signed up is a privacy
+      // decision, and the safe default is the private one.
+      attendeesVisible: e.attendeesVisible === true,
     });
   });
 
