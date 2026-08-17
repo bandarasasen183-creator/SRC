@@ -329,7 +329,7 @@ async function openEvent(ev, mount) {
   // ---- teacher tools ------------------------------------------------------
   if (isTeacher()) {
     const tbox = m.root.querySelector('#evTeacherBox');
-    tbox.replaceChildren(h('<hr class="divider"><div class="spinner"></div>'));
+    tbox.replaceChildren(h('<div><hr class="divider"><div class="spinner"></div></div>'));
     try {
       const snap = await getDocs(collection(db, 'events', ev.id, 'signups'));
       const people = snap.docs.map((d) => d.data());

@@ -9,7 +9,7 @@
  */
 
 import { chromium } from 'playwright';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 
 const APP = 'http://127.0.0.1:5000';
 const FS = 'http://127.0.0.1:8080/v1/projects/demo-src/databases/(default)/documents';
@@ -550,6 +550,57 @@ try {
   await t.click('button:has-text("Cancel")');
   await t.waitForTimeout(300);
   await t.screenshot({ path: `${SHOTS}/15-features.png`, fullPage: true });
+
+  /* ---- 8a. importing the Classroom archive -------------------------------- */
+  // The real docs/classroom-import.json, through the real UI.
+  const archive = readFileSync(new URL('../docs/classroom-import.json', import.meta.url), 'utf8');
+  const archiveCount = JSON.parse(archive).length;
+
+  await t.click('[data-route="admin"]');
+  await t.waitForSelector('#importBtn');
+  await t.click('#importBtn');
+  await t.waitForSelector('#impJson');
+
+  await t.$eval('#impJson', (el, v) => {
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, '[{"title":"no date ok"},{"title":"bad","date":"13/8/26"}]');
+  await t.click('#impCheck');
+  check('the importer refuses a malformed date', await t.isVisible('.note.bad'));
+  check('Import stays disabled while input is invalid',
+    await t.$eval('#impGo', (b) => b.disabled));
+
+  await t.$eval('#impJson', (el, v) => {
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, archive);
+  await t.click('#impCheck');
+  check('the real archive validates', !(await t.isVisible('.note.bad')));
+  check('the importer previews every post',
+    (await t.$$('#impOut ol li')).length === archiveCount);
+  await t.screenshot({ path: `${SHOTS}/16-import.png`, fullPage: true });
+
+  await t.click('#impGo');
+  await t.waitForTimeout(4000);
+
+  await t.click('[data-route="feed"]');
+  await t.waitForTimeout(2500);
+  const feedText = await t.$eval('#view', (el) => el.textContent);
+  check('imported posts appear in the feed', feedText.includes('Toast roster'));
+  check('imported posts keep the original author', feedText.includes('Ms Visser'));
+  check('imported posts are labelled as imported', feedText.includes('from Google Classroom'));
+  check('imported markdown renders as real headings', await t.isVisible('.card .body h3'));
+  check('no raw markdown leaked into the feed', !feedText.includes('##'));
+
+  // The whole point of notify:false. If the trigger had fired, the roster would
+  // have been emailed once per imported post.
+  const mailLog = await (await fetch(`${FS}/mailLog`,
+    { headers: { Authorization: 'Bearer owner' } })).json();
+  const sends = (mailLog.documents || []).filter(
+    (d) => d.fields?.status?.stringValue === 'sent');
+  check('importing emailed nobody',
+    sends.length === 0, `${sends.length} mailLog entries marked sent`);
+  await t.screenshot({ path: `${SHOTS}/17-feed-imported.png`, fullPage: true });
 
   /* ---- 8b. build version is visible -------------------------------------- */
   // Without this, "is my fix deployed?" is unanswerable from the running site.

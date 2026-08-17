@@ -177,6 +177,13 @@ export function esc(s) {
 export function h(html) {
   const t = document.createElement('template');
   t.innerHTML = html.trim();
+  // Only the first element is returned, so a second sibling root would vanish
+  // without a trace. That has already cost one silently-missing list; say so
+  // loudly rather than letting it happen again.
+  if (t.content.children.length > 1) {
+    console.error('h(): got %d root elements, all but the first are dropped. ' +
+      'Wrap them in one container.', t.content.children.length, html.slice(0, 120));
+  }
   return t.content.firstElementChild;
 }
 

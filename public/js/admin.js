@@ -10,6 +10,7 @@ import {
 import { chipInput, DEFAULT_DOMAIN } from './emails.js';
 import { csvCell } from './forms.js';
 import { state } from './state.js';
+import { openImporter } from './import.js';
 
 /** Max addresses accepted in one go. Guards against a runaway paste. */
 const MAX_PER_BATCH = 300;
@@ -46,6 +47,17 @@ export async function renderAdmin(mount) {
         <div id="addResult"></div>
       </div>
 
+      <div class="card">
+        <div class="row">
+          <div class="grow">
+            <h2 style="margin:0">Import announcements</h2>
+            <p class="small muted" style="margin:4px 0 0">Bring an existing Classroom
+              stream across. Nobody is emailed.</p>
+          </div>
+          <button class="btn ghost sm" id="importBtn">${icon('download', 14)} Import</button>
+        </div>
+      </div>
+
       <div id="requestsCard"></div>
 
       <div class="card">
@@ -69,6 +81,10 @@ export async function renderAdmin(mount) {
   });
 
   $('#clearBtn', mount).onclick = () => chips.clear();
+
+  $('#importBtn', mount).onclick = () => openImporter(() => {
+    toast('Open the Announcements tab to see them.');
+  });
 
   $('#addBtn', mount).onclick = async (e) => {
     const btn = e.currentTarget;

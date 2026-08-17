@@ -121,6 +121,12 @@ function card(a, prevSeen = Infinity) {
         <span class="dot">•</span>
         <span>${esc(a.date ? fmtDate(a.date) : fmtWhen(a.createdAt))}</span>
         ${a.editedAt ? '<span class="dot">•</span><span>edited</span>' : ''}
+        ${a.importedFrom
+          // Say so. The author name on an imported post belongs to someone who
+          // may never have signed in here, and quietly presenting it as a post
+          // written in this app would misrepresent where it came from.
+          ? `<span class="dot">•</span><span>from ${esc(a.importedFrom)}</span>`
+          : ''}
       </div>
       <div class="body">${renderBody(a.body)}</div>
       <div data-form></div>
@@ -325,7 +331,7 @@ function toggleComments(cardEl, a, btn) {
     return;
   }
   btn.textContent = 'Hide comments';
-  box.replaceChildren(h('<hr class="divider"><div class="spinner"></div>'));
+  box.replaceChildren(h('<div><hr class="divider"><div class="spinner"></div></div>'));
 
   const listEl = h('<div></div>');
   const wrap = h('<div style="margin-top:14px"></div>');
