@@ -109,6 +109,21 @@ async function seed() {
       authorUid: OTHER_UID, authorName: 'Sarah Lee', text: 'theirs', createdAt: 1,
     });
 
+    await setDoc(doc(db, 'messages', 'm_student'), {
+      authorUid: STUDENT_UID, authorName: 'John Smith', text: 'mine', createdAt: 1,
+    });
+    await setDoc(doc(db, 'messages', 'm_other'), {
+      authorUid: OTHER_UID, authorName: 'Sarah Lee', text: 'theirs', createdAt: 1,
+    });
+
+    await setDoc(doc(db, 'rosters', 'toast'), {
+      title: 'Morning toast', slots: [{ id: 'monA', label: 'Mon (Week A)', capacity: 2 }],
+      createdBy: TEACHER_UID, createdAt: 1,
+    });
+    await setDoc(doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', OTHER_UID), {
+      uid: OTHER_UID, name: 'Sarah Lee', slotId: 'monA', createdAt: 1,
+    });
+
     await setDoc(doc(db, 'forms', 'form_once'), {
       title: 'Camp form', allowMultiple: false, fields: [], createdAt: 1,
     });
@@ -666,5 +681,185 @@ describe('unknown collections are denied by default', () => {
   test('teacher cannot write to an unmodelled collection', async () => {
     const db = as(TEACHER_UID, TEACHER_EMAIL);
     await assertFails(setDoc(doc(db, 'secrets', 'x'), { a: 1 }));
+  });
+});
+
+/* =============================================================================
+   community chat
+   ========================================================================== */
+
+describe('community chat', () => {
+  before(seed);
+
+  test('signed out cannot read the chat', async () => {
+    await assertFails(getDocs(collection(signedOut(), 'messages')));
+  });
+
+  test('a member CAN read the room — chat is meant to be seen', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(getDocs(collection(db, 'messages')));
+  });
+
+  test('a member CAN post under their own name', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(addDoc(collection(db, 'messages'), {
+      authorUid: STUDENT_UID, authorName: 'John Smith', text: 'hi all', createdAt: 2,
+    }));
+  });
+
+  test('cannot post under a fake name', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(addDoc(collection(db, 'messages'), {
+      authorUid: STUDENT_UID, authorName: 'Anonymous', text: 'sneaky', createdAt: 2,
+    }));
+  });
+
+  test('cannot post as somebody else', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(addDoc(collection(db, 'messages'), {
+      authorUid: OTHER_UID, authorName: 'Sarah Lee', text: 'not me', createdAt: 2,
+    }));
+  });
+
+  test('an empty or oversized message is rejected', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    const base = { authorUid: STUDENT_UID, authorName: 'John Smith', createdAt: 2 };
+    await assertFails(addDoc(collection(db, 'messages'), { ...base, text: '' }));
+    await assertFails(addDoc(collection(db, 'messages'), { ...base, text: 'x'.repeat(2001) }));
+  });
+
+  test('smuggling extra fields into a message is rejected', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(addDoc(collection(db, 'messages'), {
+      authorUid: STUDENT_UID, authorName: 'John Smith', text: 'hi',
+      createdAt: 2, pinned: true,
+    }));
+  });
+
+  test('a member CAN edit the wording of their own message', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(updateDoc(doc(db, 'messages', 'm_student'), {
+      text: 'edited', editedAt: 3,
+    }));
+  });
+
+  test('cannot rewrite the attribution on your own message', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(updateDoc(doc(db, 'messages', 'm_student'), { authorName: 'Ms Jones' }));
+    await assertFails(updateDoc(doc(db, 'messages', 'm_student'), { authorUid: OTHER_UID }));
+  });
+
+  test('cannot edit or delete someone else\'s message', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(updateDoc(doc(db, 'messages', 'm_other'), { text: 'hijacked' }));
+    await assertFails(deleteDoc(doc(db, 'messages', 'm_other')));
+  });
+
+  test('a member CAN delete their own message', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(deleteDoc(doc(db, 'messages', 'm_student')));
+  });
+
+  test('a teacher CAN delete anyone\'s message (moderation)', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    await assertSucceeds(deleteDoc(doc(db, 'messages', 'm_other')));
+  });
+});
+
+/* =============================================================================
+   rosters
+   ========================================================================== */
+
+describe('rosters', () => {
+  before(seed);
+
+  test('signed out cannot read rosters', async () => {
+    await assertFails(getDocs(collection(signedOut(), 'rosters')));
+    await assertFails(getDoc(doc(signedOut(), 'rosters', 'toast')));
+  });
+
+  test('a member CAN read rosters and see who is on', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(getDocs(collection(db, 'rosters')));
+    // Deliberately listable, unlike form responses: the point of a roster is
+    // that everyone can see who has Tuesday.
+    await assertSucceeds(getDocs(collection(db, 'rosters', 'toast', 'claims', 'monA', 'people')));
+  });
+
+  test('a student cannot create, edit or delete a roster', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(setDoc(doc(db, 'rosters', 'mine'), { title: 'Mine', slots: [] }));
+    await assertFails(updateDoc(doc(db, 'rosters', 'toast'), { title: 'Renamed' }));
+    await assertFails(deleteDoc(doc(db, 'rosters', 'toast')));
+  });
+
+  test('a teacher CAN create and edit a roster', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    await assertSucceeds(setDoc(doc(db, 'rosters', 'setup'), {
+      title: 'Event set-up', slots: [{ id: 's1', label: 'Friday', capacity: 3 }],
+      createdBy: TEACHER_UID, createdAt: 1,
+    }));
+    await assertSucceeds(updateDoc(doc(db, 'rosters', 'toast'), { title: 'Toast roster' }));
+  });
+
+  test('a student CAN put their own name down', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertSucceeds(setDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', STUDENT_UID),
+      { uid: STUDENT_UID, name: 'John Smith', slotId: 'monA', createdAt: 2 }
+    ));
+  });
+
+  test('cannot put somebody else down', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(setDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', OTHER_UID),
+      { uid: OTHER_UID, name: 'Sarah Lee', slotId: 'monA', createdAt: 2 }
+    ));
+  });
+
+  test('cannot claim under a fake name', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(setDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', STUDENT_UID),
+      { uid: STUDENT_UID, name: 'Somebody Else', slotId: 'monA', createdAt: 2 }
+    ));
+  });
+
+  test('the claim cannot lie about which slot it is in', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(setDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', STUDENT_UID),
+      { uid: STUDENT_UID, name: 'John Smith', slotId: 'friB', createdAt: 2 }
+    ));
+  });
+
+  test('a claim cannot be edited, only made or removed', async () => {
+    const db = as(OTHER_UID, OTHER_EMAIL);
+    await assertFails(updateDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', OTHER_UID),
+      { name: 'Renamed' }
+    ));
+  });
+
+  test('a member CAN take their own name off', async () => {
+    const db = as(OTHER_UID, OTHER_EMAIL);
+    await assertSucceeds(deleteDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', OTHER_UID)
+    ));
+  });
+
+  test('a student cannot take somebody else off', async () => {
+    const db = as(STUDENT_UID, STUDENT_EMAIL);
+    await assertFails(deleteDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', OTHER_UID)
+    ));
+  });
+
+  test('a teacher CAN take anyone off, to fix a roster', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    await assertSucceeds(deleteDoc(
+      doc(db, 'rosters', 'toast', 'claims', 'monA', 'people', OTHER_UID)
+    ));
   });
 });

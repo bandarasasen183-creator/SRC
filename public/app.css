@@ -607,3 +607,67 @@ tbody tr:hover { background: var(--hover); }
 .upnext-date {
   flex: none; min-width: 92px; color: var(--brand); font-weight: 600; font-size: .82rem;
 }
+
+/* ---- community chat ------------------------------------------------------ */
+
+.chat-wrap { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; }
+.chat-intro { padding: 10px 0 0; }
+
+/* Fixed height so the composer stays put and only the messages scroll. On a
+   phone that is the difference between a chat and a page that jumps. */
+.chat-list {
+  flex: 1; min-height: 40vh; max-height: calc(100vh - 260px);
+  overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: 12px;
+}
+
+.msg { margin-bottom: 12px; }
+.msg.grouped { margin-top: -6px; }
+.msg-who { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
+.msg-who .who { font-weight: 600; font-size: .88rem; }
+.msg-who .when { color: var(--text-muted); font-size: .76rem; }
+
+.msg-row { display: flex; gap: 6px; align-items: flex-start; }
+.msg .bubble {
+  flex: 0 1 auto; max-width: 78%;
+  padding: 8px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.msg.mine .msg-row { flex-direction: row-reverse; }
+.msg.mine .msg-who { flex-direction: row-reverse; }
+.msg.mine .bubble { background: var(--brand-tint); border-color: transparent; }
+.msg .bubble .body p { margin: 0; }
+.msg .bubble .body p + p { margin-top: 6px; }
+
+/* Tools stay out of the way until you hover or focus the message. */
+.msg-tools { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.msg:hover .msg-tools, .msg:focus-within .msg-tools { opacity: 1; }
+@media (hover: none) { .msg-tools { opacity: 1; } }
+
+.msg-edit { flex: 1; }
+.chat-compose { display: flex; gap: 8px; align-items: flex-end; }
+.chat-compose textarea { flex: 1; min-height: 0; resize: none; }
+
+/* ---- rosters ------------------------------------------------------------- */
+
+.slots { margin-top: 12px; }
+.slot {
+  display: flex; gap: 10px; align-items: center;
+  padding: 10px 0; border-top: 1px solid var(--border);
+}
+.slot:first-child { border-top: 0; }
+.slot-main { flex: 1; min-width: 0; }
+.slot-label { font-weight: 600; font-size: .92rem; margin-bottom: 4px; }
+.slot-people { display: flex; flex-wrap: wrap; gap: 5px; }
+.slot-side { display: flex; gap: 8px; align-items: center; flex: none; }
+.slot.mine .slot-label { color: var(--brand); }
+.slot.full .slot-label { color: var(--text-muted); }
+
+.chip.static { cursor: default; }
+
+@media (max-width: 520px) {
+  .slot { flex-wrap: wrap; }
+  .slot-side { width: 100%; justify-content: flex-end; }
+}

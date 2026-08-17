@@ -551,6 +551,84 @@ try {
   await t.waitForTimeout(300);
   await t.screenshot({ path: `${SHOTS}/15-features.png`, fullPage: true });
 
+  /* ---- 7c. community chat ------------------------------------------------ */
+  await t.click('[data-route="chat"]');
+  await t.waitForSelector('#chatText');
+  await t.fill('#chatText', 'Toast crew, who is on Tuesday?');
+  await t.click('#chatSend');
+  await t.waitForTimeout(1800);
+  check('a chat message posts and appears', await t.isVisible('text=Toast crew, who is on Tuesday?'));
+  check('the message carries the real name', await t.isVisible('.msg .who'));
+
+  await s.click('[data-route="chat"]');
+  await s.waitForSelector('#chatText');
+  await s.waitForTimeout(1500);
+  check('the student sees the teacher\'s message', await s.isVisible('text=Toast crew, who is on Tuesday?'));
+  await s.fill('#chatText', 'I can do Tuesdays');
+  await s.click('#chatSend');
+  await s.waitForTimeout(1800);
+  check('the student can post too', await s.isVisible('text=I can do Tuesdays'));
+
+  // A student must not be able to remove another person's message.
+  const otherTools = await s.$$eval('.msg:not(.mine) .msg-tools button', (b) => b.length);
+  check('a student gets no controls on someone else\'s message', otherTools === 0, `${otherTools} buttons`);
+  const chatDenied = await s.evaluate(async () => {
+    const { db, collection, getDocs, deleteDoc, doc } = await import('/js/fb.js');
+    const snap = await getDocs(collection(db, 'messages'));
+    const notMine = snap.docs.find((d) => d.data().authorName === 'Ms Jones');
+    if (!notMine) return 'no teacher message found';
+    try { await deleteDoc(doc(db, 'messages', notMine.id)); return 'ALLOWED'; }
+    catch (e) { return e.code || 'denied'; }
+  });
+  check('deleting another person\'s message is denied by the rules',
+    chatDenied.includes('permission-denied'), chatDenied);
+  await s.screenshot({ path: `${SHOTS}/18-chat.png`, fullPage: true });
+
+  /* ---- 7d. rosters ------------------------------------------------------- */
+  await t.click('[data-route="rosters"]');
+  await t.waitForSelector('#newRoster');
+  await t.click('#newRoster');
+  await t.waitForSelector('#roTitle');
+  await t.fill('#roTitle', 'Morning toast');
+  await t.fill('#roDesc', 'Arrive 8:00, set up the toast station');
+  await t.click('#roWeek');
+  await t.waitForTimeout(300);
+  const slotInputs = await t.$$eval('#roSlots .row', (r) => r.length);
+  check('the Weeks A & B shortcut builds ten slots', slotInputs === 10, `${slotInputs} slots`);
+  await t.click('#roSave');
+  await t.waitForTimeout(2000);
+  check('the roster is created', await t.isVisible('text=Morning toast'));
+  check('slots are listed', await t.isVisible('text=Mon (Week A)'));
+
+  await s.click('[data-route="rosters"]');
+  await s.waitForTimeout(1800);
+  check('a student sees no New roster button', !(await s.isVisible('#newRoster')));
+  check('a student sees the roster', await s.isVisible('text=Morning toast'));
+
+  await s.click('.slot:first-child .slot-side button');
+  await s.waitForTimeout(2000);
+  check('a student can put their own name down', await s.isVisible('.slot.mine'));
+  check('the name shows on the slot', await s.isVisible('.slot.mine .chip'));
+
+  await t.click('[data-route="rosters"]');
+  await t.waitForTimeout(1800);
+  check('the teacher sees who signed up', await t.isVisible('.slot .chip'));
+
+  const rosterDenied = await s.evaluate(async () => {
+    const { db, doc, setDoc } = await import('/js/fb.js');
+    const snap = await (await import('/js/fb.js')).getDocs(
+      (await import('/js/fb.js')).collection(db, 'rosters'));
+    const id = snap.docs[0]?.id;
+    try {
+      await setDoc(doc(db, 'rosters', id, 'claims', 'mon-week-a-0', 'people', 'someone-else'),
+        { uid: 'someone-else', name: 'Fake Person', slotId: 'mon-week-a-0' });
+      return 'ALLOWED';
+    } catch (e) { return e.code || 'denied'; }
+  });
+  check('a student cannot sign somebody else up',
+    rosterDenied.includes('permission-denied'), rosterDenied);
+  await s.screenshot({ path: `${SHOTS}/19-rosters.png`, fullPage: true });
+
   /* ---- 8a. importing the Classroom archive -------------------------------- */
   // The real docs/classroom-import.json, through the real UI.
   const archive = readFileSync(new URL('../docs/classroom-import.json', import.meta.url), 'utf8');

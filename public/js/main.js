@@ -10,6 +10,8 @@ import {
 import { renderFeed, stopFeed } from './feed.js';
 import { renderAdmin } from './admin.js';
 import { renderEvents } from './events.js';
+import { renderChat, stopChat } from './chat.js';
+import { renderRosters } from './rosters.js';
 import { initVersion, versionLabel, watchForUpdate } from './version.js';
 
 const appEl = $('#app');
@@ -37,6 +39,8 @@ function cycleTheme() {
 const ROUTES = {
   feed: { label: 'Announcements', ic: 'megaphone' },
   events: { label: 'Events', ic: 'calendar' },
+  rosters: { label: 'Rosters', ic: 'clipboard' },
+  chat: { label: 'Chat', ic: 'comment' },
   admin: { label: 'Admin', ic: 'users' },
 };
 
@@ -72,7 +76,14 @@ function shell() {
   `);
 
   wrap.querySelectorAll('[data-route]').forEach((b) => {
-    b.onclick = () => { location.hash = `#/${b.dataset.route}`; };
+    b.onclick = () => {
+      const next = `#/${b.dataset.route}`;
+      // Setting the hash to what it already is fires no hashchange, so tapping
+      // the tab you are on would do nothing. People tap it to refresh — on a
+      // roster or the chat that is exactly when they want fresh data.
+      if (location.hash === next) shell();
+      else location.hash = next;
+    };
   });
   $('#themeBtn', wrap).onclick = cycleTheme;
   $('#meBtn', wrap).onclick = openMe;
@@ -81,8 +92,11 @@ function shell() {
   const view = $('#view', wrap);
 
   stopFeed();
+  stopChat();
   if (route === 'admin') renderAdmin(view);
   else if (route === 'events') renderEvents(view);
+  else if (route === 'rosters') renderRosters(view);
+  else if (route === 'chat') renderChat(view);
   else renderFeed(view);
 }
 
@@ -109,6 +123,7 @@ function openMe() {
   m.root.querySelector('#mOut').onclick = async () => {
     m.close();
     stopFeed();
+    stopChat();
     await signOut(auth);
   };
 }
@@ -143,6 +158,7 @@ async function boot() {
 
   onAuthStateChanged(auth, async (user) => {
     stopFeed();
+    stopChat();
     state.user = user;
     state.profile = null;
 

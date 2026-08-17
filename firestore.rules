@@ -285,6 +285,67 @@ service cloud.firestore {
       }
     }
 
+    // ---- community chat ---------------------------------------------------
+    // A single shared room for the whole SRC. Unlike form responses, chat is
+    // meant to be seen — that is the point of it — so members may list it.
+    // Everything is under a real name, and teachers can remove anything.
+
+    match /messages/{id} {
+      allow get, list: if isMember();
+
+      allow create: if isMember()
+        && incoming().authorUid == request.auth.uid
+        // Same rule as comments: you post under the name on your profile, so a
+        // message can always be traced to a real person.
+        && incoming().authorName == profile().name
+        && incoming().text is string
+        && incoming().text.size() > 0
+        && incoming().text.size() <= 2000
+        && incoming().keys().hasOnly(['text', 'authorUid', 'authorName', 'createdAt', 'editedAt']);
+
+      // Edit your own wording only — never the attribution or the timestamp.
+      allow update: if isMember()
+        && existing().authorUid == request.auth.uid
+        && changed().hasOnly(['text', 'editedAt'])
+        && incoming().text is string
+        && incoming().text.size() > 0
+        && incoming().text.size() <= 2000;
+
+      allow delete: if isMember()
+        && (existing().authorUid == request.auth.uid || isTeacher());
+    }
+
+    // ---- rosters ----------------------------------------------------------
+    // Recurring duty rosters (the morning toast roster, event set-up, and so
+    // on). Teachers define the slots; anyone can put their own name down.
+
+    match /rosters/{id} {
+      allow get, list: if isMember();
+      allow create, update, delete: if isTeacher();
+
+      // Claims are deliberately PUBLIC to members, which is the opposite of
+      // form responses. A roster exists so people can see who is on Tuesday;
+      // hiding the names would defeat it.
+      match /claims/{slotId}/people/{uid} {
+        allow get, list: if isMember();
+
+        // You add and remove yourself, under your own real name. A teacher can
+        // take anyone off, to fix a roster without chasing the person.
+        allow create: if isMember()
+          && request.auth.uid == uid
+          && incoming().uid == uid
+          && incoming().name == profile().name
+          && incoming().slotId == slotId;
+
+        allow delete: if isMember()
+          && (request.auth.uid == uid || isTeacher());
+
+        // No edits: a claim is either there or it isn't. Allowing updates would
+        // let someone rewrite the name on their own claim.
+        allow update: if false;
+      }
+    }
+
     // ---- mail log ---------------------------------------------------------
     // Idempotency guard + failure record for the notification function.
     // Written exclusively by the Cloud Function via the Admin SDK, which
