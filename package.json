@@ -6,7 +6,7 @@
     "build:vendor": "esbuild src/firebase-entry.js --bundle --format=esm --minify --target=es2020 --outfile=public/vendor/firebase.js",
     "emul": "firebase emulators:start --project=demo-src --only auth,firestore,hosting",
     "test:rules": "firebase emulators:exec --project=src-rules-test --only firestore \"node --test tests/rules.test.js\"",
-    "test:unit": "node --test tests/emails.test.js tests/functions.test.js tests/region.test.js",
+    "test:unit": "node --test tests/emails.test.js tests/functions.test.js tests/region.test.js tests/version-stamp.test.js",
     "test:e2e": "node tests/e2e.mjs",
     "test": "npm run test:unit && npm run test:rules",
     "deploy": "firebase deploy"

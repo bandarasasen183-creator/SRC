@@ -19,11 +19,18 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Run a git command, or return a placeholder — never fail the deploy for this. */
+/**
+ * Run a git command, or return a placeholder — never fail the deploy for this.
+ *
+ * The fallback applies ONLY when git itself fails. It deliberately does not
+ * apply to empty output: `status --porcelain` returns nothing for a clean
+ * tree, and an earlier version of this used `|| fallback`, which turned that
+ * empty string into "unknown" and so reported every clean tree as dirty.
+ */
 function git(args, fallback = 'unknown') {
   try {
     return execSync(`git ${args}`, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString().trim() || fallback;
+      .toString().trim();
   } catch {
     return fallback;
   }
