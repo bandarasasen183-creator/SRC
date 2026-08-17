@@ -21,6 +21,26 @@
 const MAX_POSTS = 100;
 
 /**
+ * Imported comments ride along on the announcement document rather than
+ * becoming real comments, and this is deliberate.
+ *
+ * The rules require every comment to carry the author's OWN uid and the name
+ * on their OWN profile — that is the "nobody posts under a fake name"
+ * guarantee. Importing Bella's comment as a real comment would mean either
+ * attributing it to whoever ran the import, or punching a hole in that rule so
+ * a teacher can post as any student. Neither is acceptable for an archive.
+ *
+ * So they are stored as plain data and shown as a clearly-labelled read-only
+ * archive under the post. Nobody can reply to them, and nobody can mistake
+ * them for someone using this app.
+ *
+ * Capped because a Firestore document is limited to 1MB and this array shares
+ * that budget with the post body.
+ */
+const MAX_COMMENTS = 60;
+const MAX_COMMENT_LEN = 2000;
+
+/**
  * Validate and normalise a pasted payload.
  * Returns { posts, errors } — never throws, so bad input is reportable.
  */
@@ -58,6 +78,43 @@ export function parseImport(text) {
       return;
     }
 
+    const rawComments = p.comments;
+    if (rawComments !== undefined && !Array.isArray(rawComments)) {
+      errors.push(`${at}: comments must be an array.`);
+      return;
+    }
+    const list = Array.isArray(rawComments) ? rawComments : [];
+    if (list.length > MAX_COMMENTS) {
+      errors.push(`${at}: ${list.length} comments is more than the ${MAX_COMMENTS} limit.`);
+      return;
+    }
+
+    const comments = [];
+    let commentError = false;
+    list.forEach((c, ci) => {
+      const where = `${at}, comment ${ci + 1}`;
+      if (!c || typeof c !== 'object') { errors.push(`${where}: not an object.`); commentError = true; return; }
+
+      const cBody = String(c.body ?? '').trim();
+      const cAuthor = String(c.authorName ?? '').trim();
+      const cDate = String(c.date ?? '').trim();
+
+      if (!cBody) { errors.push(`${where}: has no text.`); commentError = true; return; }
+      if (cBody.length > MAX_COMMENT_LEN) {
+        errors.push(`${where}: over ${MAX_COMMENT_LEN} characters.`);
+        commentError = true;
+        return;
+      }
+      if (!cAuthor) { errors.push(`${where}: has no author.`); commentError = true; return; }
+      if (cDate && !/^\d{4}-\d{2}-\d{2}$/.test(cDate)) {
+        errors.push(`${where}: date must look like 2026-08-13.`);
+        commentError = true;
+        return;
+      }
+      comments.push({ authorName: cAuthor, body: cBody, date: cDate });
+    });
+    if (commentError) return;
+
     posts.push({
       title,
       body,
@@ -65,6 +122,7 @@ export function parseImport(text) {
       authorName: String(p.authorName ?? '').trim(),
       pinned: p.pinned === true,
       commentsOpen: p.commentsOpen !== false,
+      comments,
     });
   });
 

@@ -17,6 +17,9 @@ export function openImporter(onDone) {
       <strong>No emails are sent.</strong> Every imported post is written with
       notifications off, so nobody's inbox gets a dozen messages at once.
       Posts are created oldest-first so the feed reads in the right order.
+      Any comments come in as a read-only archive under each post — they cannot
+      become real comments, because a comment must carry its author's own
+      account and this app has no account for them.
     </div>
 
     <div class="field">
@@ -69,6 +72,7 @@ export function openImporter(onDone) {
           <strong>${esc(p.title)}</strong>
           ${p.date ? `<span class="muted"> — ${esc(fmtDate(p.date))}</span>` : ''}
           ${p.authorName ? `<span class="muted"> · ${esc(p.authorName)}</span>` : ''}
+          ${p.comments.length ? `<span class="muted"> · ${p.comments.length} archived comment${p.comments.length > 1 ? 's' : ''}</span>` : ''}
         </li>`).join('')}
       </ol>
       </div>`));
@@ -99,6 +103,9 @@ export function openImporter(onDone) {
           authorUid: state.user.uid,   // required by the rules: you own it
           authorName: p.authorName || state.profile.name,
           importedFrom: 'Google Classroom',
+          // Archive only — see the note in import-parse.js on why these are
+          // not real comments.
+          importedComments: p.comments,
           importedBy: state.profile.name,
           createdAt: serverTimestamp(),
         });

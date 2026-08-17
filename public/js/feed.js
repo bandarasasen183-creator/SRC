@@ -104,6 +104,35 @@ export function renderFeed(mount) {
   });
 }
 
+/**
+ * Comments carried over from Google Classroom.
+ *
+ * These are read-only archive material, not comments in this app, and they are
+ * labelled as such. They cannot be real comments: the rules require every
+ * comment to carry its author's own uid and the name on their own profile, and
+ * the people who wrote these have no account here. Faking that would break the
+ * one guarantee the comment system makes.
+ */
+function importedCommentsHtml(a) {
+  const list = Array.isArray(a.importedComments) ? a.importedComments : [];
+  if (!list.length) return '';
+  return `
+    <details class="archive">
+      <summary>${icon('comment', 13)} ${list.length} comment${list.length > 1 ? 's' : ''}
+        from ${esc(a.importedFrom || 'the old site')}</summary>
+      <p class="small muted" style="margin:8px 0 4px">Copied across for the record. You can't
+        reply to these — post a new comment below instead.</p>
+      ${list.map((c) => `
+        <div class="comment archived">
+          <div class="meta">
+            <span class="who">${esc(c.authorName || 'Unknown')}</span>
+            ${c.date ? `<span class="dot">•</span><span>${esc(fmtDate(c.date))}</span>` : ''}
+          </div>
+          <div class="body">${renderBody(c.body)}</div>
+        </div>`).join('')}
+    </details>`;
+}
+
 /* ---- one announcement ---------------------------------------------------- */
 
 function card(a, prevSeen = Infinity) {
@@ -129,6 +158,7 @@ function card(a, prevSeen = Infinity) {
           : ''}
       </div>
       <div class="body">${renderBody(a.body)}</div>
+      ${importedCommentsHtml(a)}
       <div data-form></div>
       <div data-actions style="margin-top:14px"></div>
       <div data-comments></div>

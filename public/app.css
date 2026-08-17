@@ -671,3 +671,20 @@ tbody tr:hover { background: var(--hover); }
   .slot { flex-wrap: wrap; }
   .slot-side { width: 100%; justify-content: flex-end; }
 }
+
+/* Comments carried over from an imported stream. Visually distinct from live
+   comments on purpose — they are a record, not a conversation. */
+.archive {
+  margin-top: 12px; padding: 10px 12px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.archive > summary {
+  cursor: pointer; font-size: .85rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.archive > summary::-webkit-details-marker { display: none; }
+.comment.archived { padding: 8px 0; border-top: 1px solid var(--border); }
+.comment.archived .meta { margin-bottom: 2px; }
+.comment.archived .who { font-weight: 600; color: var(--text); }
+.comment.archived .body p:last-child { margin-bottom: 0; }

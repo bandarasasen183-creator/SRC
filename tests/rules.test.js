@@ -433,6 +433,29 @@ describe('announcements — students read, teachers write', () => {
     );
   });
 
+  test('an imported archive is allowed but bounded', async () => {
+    const db = as(TEACHER_UID, TEACHER_EMAIL);
+    const comment = { authorName: 'Bella Cantwell', body: 'ill be there', date: '2026-08-14' };
+    await assertSucceeds(addDoc(collection(db, 'announcements'), {
+      title: 'Imported', body: 'x', authorUid: TEACHER_UID, authorName: 'Ms Jones',
+      pinned: false, commentsOpen: true, date: '2026-08-13', createdAt: 1,
+      importedFrom: 'Google Classroom',
+      importedComments: Array.from({ length: 60 }, () => comment),
+    }));
+    // A document is capped at 1MB; an unbounded array shares that budget with
+    // the body and would eventually make the post unwritable.
+    await assertFails(addDoc(collection(db, 'announcements'), {
+      title: 'Too many', body: 'x', authorUid: TEACHER_UID, authorName: 'Ms Jones',
+      pinned: false, commentsOpen: true, date: '2026-08-13', createdAt: 1,
+      importedComments: Array.from({ length: 61 }, () => comment),
+    }));
+    await assertFails(addDoc(collection(db, 'announcements'), {
+      title: 'Not a list', body: 'x', authorUid: TEACHER_UID, authorName: 'Ms Jones',
+      pinned: false, commentsOpen: true, date: '2026-08-13', createdAt: 1,
+      importedComments: 'nope',
+    }));
+  });
+
   test('nobody can write the mail log from a client', async () => {
     const t = as(TEACHER_UID, TEACHER_EMAIL);
     await assertFails(setDoc(doc(t, 'mailLog', 'ann_open'), { status: 'faked' }));

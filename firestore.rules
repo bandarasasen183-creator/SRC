@@ -158,7 +158,14 @@ service cloud.firestore {
         // notifiedAt is owned by the Cloud Function (Admin SDK, bypasses
         // rules). A client must never set it, or it could suppress or fake
         // the notification bookkeeping.
-        && !('notifiedAt' in incoming());
+        && !('notifiedAt' in incoming())
+        // Archived comments from an imported stream ride along on the document.
+        // Bound them: a document is capped at 1MB and this array shares that
+        // budget with the body. Rules cannot inspect each element, so the
+        // contents are validated by the importer before they get here.
+        && (!('importedComments' in incoming())
+            || (incoming().importedComments is list
+                && incoming().importedComments.size() <= 60));
 
       // Teachers edit and delete their OWN announcements.
       allow update: if isTeacher()

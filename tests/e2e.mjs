@@ -572,6 +572,23 @@ try {
   // A student must not be able to remove another person's message.
   const otherTools = await s.$$eval('.msg:not(.mine) .msg-tools button', (b) => b.length);
   check('a student gets no controls on someone else\'s message', otherTools === 0, `${otherTools} buttons`);
+  // The rule that makes archived comments necessary: a member cannot post a
+  // comment under anybody else's name, not even a teacher.
+  const fakeComment = await t.evaluate(async () => {
+    const { db, collection, getDocs, addDoc, doc } = await import('/js/fb.js');
+    const anns = await getDocs(collection(db, 'announcements'));
+    const open = anns.docs.find((d) => d.data().commentsOpen);
+    if (!open) return 'no open thread';
+    try {
+      await addDoc(collection(db, 'announcements', open.id, 'comments'), {
+        authorUid: 'someone-else', authorName: 'Bella Cantwell', text: 'faked', createdAt: 1,
+      });
+      return 'ALLOWED';
+    } catch (e) { return e.code || 'denied'; }
+  });
+  check('even a teacher cannot post a comment as another person',
+    fakeComment.includes('permission-denied'), fakeComment);
+
   const chatDenied = await s.evaluate(async () => {
     const { db, collection, getDocs, deleteDoc, doc } = await import('/js/fb.js');
     const snap = await getDocs(collection(db, 'messages'));
@@ -664,10 +681,23 @@ try {
   await t.click('[data-route="feed"]');
   await t.waitForTimeout(2500);
   const feedText = await t.$eval('#view', (el) => el.textContent);
-  check('imported posts appear in the feed', feedText.includes('Toast roster'));
+  check('imported posts appear in the feed', feedText.includes('Toast Roster'));
   check('imported posts keep the original author', feedText.includes('Ms Visser'));
   check('imported posts are labelled as imported', feedText.includes('from Google Classroom'));
   check('imported markdown renders as real headings', await t.isVisible('.card .body h3'));
+  check('archived comments are attached to their post', await t.isVisible('.archive'));
+  // The summary wraps across lines in the markup, so compare on collapsed
+  // whitespace rather than the literal text node.
+  const archiveLabel = (await t.$eval('.archive summary', (el) => el.textContent))
+    .replace(/\s+/g, ' ').trim();
+  check('the archive says how many and where from',
+    /^\d+ comments? from Google Classroom$/.test(archiveLabel), archiveLabel);
+  await t.click('.archive summary');
+  await t.waitForTimeout(300);
+  check('an archived comment shows its original author',
+    await t.isVisible('.comment.archived .who'));
+  check('archived comments are read-only — no edit or delete controls',
+    (await t.$$eval('.comment.archived button', (b) => b.length)) === 0);
   check('no raw markdown leaked into the feed', !feedText.includes('##'));
 
   // The whole point of notify:false. If the trigger had fired, the roster would
