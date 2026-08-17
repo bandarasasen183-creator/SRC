@@ -137,6 +137,8 @@ const ICONS = {
   contrast: '<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" stroke="none"/>',
   clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
   bold: '<path d="M6 4h7a4 4 0 0 1 0 8H6z"/><path d="M6 12h8a4 4 0 0 1 0 8H6z"/>',
+  type: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
+  eraser: '<path d="M20 20H8.5L3 14.5a2 2 0 0 1 0-2.8l7.7-7.7a2 2 0 0 1 2.8 0l6.5 6.5a2 2 0 0 1 0 2.8L13 20"/><line x1="18" y1="20" x2="20" y2="20"/>',
   italic: '<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   'list-ol': '<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3a1 1 0 0 0-2 0"/>',
@@ -237,15 +239,25 @@ export function confirmDialog(title, body, { danger = true, okLabel = 'Delete' }
    Supports: **bold**, *italic*, [text](url), bare urls, - bullets, 1. numbers.
 --------------------------------------------------------------------------- */
 
-function safeUrl(url) {
+export function safeUrl(url) {
   const u = String(url).trim();
   // Only http(s). Blocks javascript:, data:, vbscript: and friends.
   if (!/^https?:\/\//i.test(u)) return null;
   return u;
 }
 
+// Stand-in for a backslash-escaped character while the formatters run, so a
+// literal asterisk the writer typed cannot be mistaken for emphasis. The editor
+// escapes these on the way out; text written before it existed has no
+// backslashes and so is unaffected.
+const HOLD = '\u0000';
+
 function inline(escaped) {
   let s = escaped;
+
+  // Park \* \[ \] \\ out of reach of every rule below, and restore them last.
+  s = s.replace(/\\([\\*[\]])/g, (m, ch) => `${HOLD}${ch.codePointAt(0)}${HOLD}`);
+
   // [text](url)
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, text, url) => {
     const safe = safeUrl(url.replaceAll('&amp;', '&'));
@@ -260,12 +272,18 @@ function inline(escaped) {
   });
   s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+
+  // Restore the escaped characters as themselves. Safe to do last: all four are
+  // plain punctuation, and esc() already neutralised anything HTML-special.
+  s = s.replace(new RegExp(`${HOLD}(\\d+)${HOLD}`, 'g'), (m, code) => String.fromCodePoint(+code));
   return s;
 }
 
 /** Render a restricted markdown subset to safe HTML. */
 export function renderBody(text) {
-  const lines = esc(text ?? '').split(/\r?\n/);
+  // Strip the placeholder codepoint so nobody can smuggle one in and interfere
+  // with the escape handling in inline().
+  const lines = esc(String(text ?? '').replaceAll(HOLD, '')).split(/\r?\n/);
   const out = [];
   let list = null; // 'ul' | 'ol' | null
   let para = [];
@@ -277,10 +295,17 @@ export function renderBody(text) {
 
   for (const raw of lines) {
     const line = raw.trimEnd();
+    const heading = /^(#{2,6})\s+(.*)$/.exec(line);
     const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
     const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
 
-    if (bullet) {
+    if (heading) {
+      flushPara(); closeList();
+      // Only two levels are offered, and everything deeper folds into the
+      // smaller one — a notice board does not need six.
+      const tag = heading[1].length === 2 ? 'h2' : 'h3';
+      out.push(`<${tag}>${inline(heading[2])}</${tag}>`);
+    } else if (bullet) {
       flushPara();
       if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
       out.push(`<li>${inline(bullet[1])}</li>`);
@@ -380,78 +405,4 @@ export function friendlyError(e) {
   // A bare code as the message ("internal") is not an explanation.
   if (!msg || msg === code || msg.length < 12) return 'Something went wrong. Try again.';
   return msg;
-}
-
-/* ---- markdown toolbar -------------------------------------------------------
-   One implementation used by the announcement composer and the event
-   description, so the two behave identically. Returns a wired DOM element —
-   the caller just inserts it above the textarea.
---------------------------------------------------------------------------- */
-
-const MD_BUTTONS = [
-  { key: 'bold', ic: 'bold', title: 'Bold' },
-  { key: 'italic', ic: 'italic', title: 'Italic' },
-  { key: 'link', ic: 'link', title: 'Insert link' },
-  { key: 'bullet', ic: 'list', title: 'Bullet list' },
-  { key: 'number', ic: 'list-ol', title: 'Numbered list' },
-];
-
-export function markdownToolbar(textarea, onChange) {
-  const bar = h(`<div class="mdbar" role="group" aria-label="Text formatting">
-    ${MD_BUTTONS.map((b) => `
-      <button type="button" class="mdbtn" data-md="${b.key}"
-              title="${b.title}" aria-label="${b.title}">${icon(b.ic, 16)}</button>`).join('')}
-  </div>`);
-
-  bar.querySelectorAll('[data-md]').forEach((btn) => {
-    btn.onclick = () => {
-      const kind = btn.dataset.md;
-      const s = textarea.selectionStart;
-      const e = textarea.selectionEnd;
-      const sel = textarea.value.slice(s, e);
-
-      let out;
-      let selectFrom;
-      let selectTo;
-      let from = s;
-      let to = e;
-
-      if (kind === 'bold' || kind === 'italic') {
-        const mark = kind === 'bold' ? '**' : '*';
-        const word = sel || (kind === 'bold' ? 'bold text' : 'italic text');
-        out = `${mark}${word}${mark}`;
-        selectFrom = s + mark.length;
-        selectTo = selectFrom + word.length;
-      } else if (kind === 'link') {
-        const label = sel || 'link text';
-        out = `[${label}](https://)`;
-        // Land the caret inside the URL — that is what you type next.
-        selectFrom = s + label.length + 3 + 8;
-        selectTo = selectFrom;
-      } else {
-        // A list marker belongs at the start of a line, so grow the range out
-        // to whole lines first. Otherwise selecting a word mid-sentence and
-        // hitting Bullet would drop "- " into the middle of it.
-        const v = textarea.value;
-        from = v.lastIndexOf('\n', s - 1) + 1;
-        to = v.indexOf('\n', e);
-        if (to === -1) to = v.length;
-
-        const lines = (v.slice(from, to) || 'item').split('\n');
-        out = lines
-          .map((l, i) => (kind === 'bullet' ? `- ${l}` : `${i + 1}. ${l}`))
-          .join('\n');
-        selectFrom = from + (kind === 'bullet' ? 2 : 3);
-        selectTo = selectFrom + lines[0].length;
-      }
-
-      textarea.setRangeText(out, from, to, 'end');
-      textarea.focus();
-      textarea.setSelectionRange(selectFrom, selectTo);
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      onChange?.();
-    };
-  });
-
-  return bar;
 }

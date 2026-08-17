@@ -162,30 +162,124 @@ try {
   await t.waitForSelector('#cTitle');
   await t.fill('#cTitle', 'SRC meeting moved to Thursday');
 
-  // Formatting toolbar: the buttons must actually edit the textarea, and the
-  // live preview must follow. Typing raw markdown afterwards overwrites this.
-  check('composer shows a formatting toolbar', await t.isVisible('.mdbar .mdbtn[data-md="bold"]'));
+  // Rich editor: the buttons must produce visible formatting, not markdown
+  // syntax the writer has to read past.
+  check('composer shows a formatting toolbar', await t.isVisible('.rte-bar [data-cmd="bold"]'));
   check('the toolbar uses icons, not letters',
-    await t.$eval('.mdbar [data-md="bold"]', (b) => !!b.querySelector('svg') && !b.textContent.trim()));
-  await t.fill('#cBody', 'ideas');
-  await t.$eval('#cBody', (el) => el.setSelectionRange(0, 5));
-  await t.click('.mdbar [data-md="bold"]');
-  check('Bold wraps the selection in **',
-    (await t.$eval('#cBody', (el) => el.value)) === '**ideas**');
-  check('the selected word stays selected after Bold',
-    (await t.$eval('#cBody', (el) => el.value.slice(el.selectionStart, el.selectionEnd))) === 'ideas');
-  // #cPreview lives inside a collapsed <details>, so assert on its content
-  // rather than its visibility.
-  check('the preview updates from a toolbar click',
-    await t.$eval('#cPreview', (el) => el.innerHTML.includes('<strong>ideas</strong>')));
-  // Bullet must reach the start of the line even though the selection is the
-  // word "ideas" sitting between the ** markers.
-  await t.click('.mdbar [data-md="bullet"]');
-  check('Bullet list prefixes the whole line, not the selection',
-    (await t.$eval('#cBody', (el) => el.value)) === '- **ideas**');
-  await t.screenshot({ path: `${SHOTS}/04a-mdbar.png` });
+    await t.$eval('.rte-bar [data-cmd="bold"]',
+      (b) => !!b.querySelector('svg') && !b.textContent.trim()));
 
-  await t.fill('#cBody', 'Bring your **ideas**.\n\n- Fundraiser\n- Uniform survey\n\nDetails: [the plan](https://example.com/plan)');
+  const type = async (text) => {
+    await t.click('.rte-area');
+    await t.$eval('.rte-area', (el) => { el.innerHTML = ''; });
+    await t.keyboard.type(text);
+  };
+  const selectAll = () => t.$eval('.rte-area', (el) => {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  });
+
+  await type('ideas');
+  await selectAll();
+  await t.click('.rte-bar [data-cmd="bold"]');
+  check('Bold makes the text actually bold in the editor',
+    await t.$eval('.rte-area', (el) => !!el.querySelector('b, strong')));
+  check('no asterisks are shown to the writer',
+    !(await t.$eval('.rte-area', (el) => el.textContent)).includes('*'));
+  check('the Bold button shows as active while the caret is inside it',
+    await t.$eval('.rte-bar [data-cmd="bold"]', (b) => b.getAttribute('aria-pressed') === 'true'));
+
+  await type('Term 3 plans');
+  await selectAll();
+  await t.click('.rte-bar [data-cmd="formatBlock"][data-arg="h2"]');
+  check('Title produces a real heading element',
+    await t.$eval('.rte-area', (el) => !!el.querySelector('h2')));
+
+  await type('Fundraising');
+  await selectAll();
+  await t.click('.rte-bar [data-cmd="formatBlock"][data-arg="h3"]');
+  check('Subtitle produces a real subheading element',
+    await t.$eval('.rte-area', (el) => !!el.querySelector('h3')));
+
+  // Paste must arrive as plain text — otherwise Word/Docs markup rides in.
+  await type('');
+  await t.evaluate(() => navigator.clipboard?.writeText?.('plain'));
+  check('the editor strips markup from pasted content', await t.$eval('.rte-area', (el) => {
+    const e = new ClipboardEvent('paste', { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+    e.clipboardData.setData('text/html', '<b>bold</b><script>alert(1)</script>');
+    e.clipboardData.setData('text/plain', 'bold');
+    el.dispatchEvent(e);
+    return !el.querySelector('script') && !el.querySelector('b');
+  }));
+
+  // Hostile HTML forced straight into the editor must survive serialisation as
+  // text, never as markup. This is the whole reason storage stays markdown.
+  await t.$eval('.rte-area', (el) => {
+    el.innerHTML = '<img src=x onerror="alert(1)"><span onclick="alert(2)">hi</span>';
+  });
+  const hostile = await t.evaluate(async () => {
+    const { domToMarkdown } = await import('/js/editor.js');
+    return domToMarkdown(document.querySelector('.rte-area'));
+  });
+  check('injected HTML serialises to plain text, not markup',
+    !/[<>]/.test(hostile) && hostile.includes('hi'), JSON.stringify(hostile));
+
+  // Regression: a bold word mid-sentence used to serialise as three separate
+  // lines, splitting the sentence apart wherever formatting appeared.
+  const inlineMd = await t.evaluate(async () => {
+    const { domToMarkdown } = await import('/js/editor.js');
+    const el = document.querySelector('.rte-area');
+    el.innerHTML = 'Bring your <b>ideas</b>&nbsp;and <i>energy</i> today';
+    return domToMarkdown(el);
+  });
+  check('inline formatting stays on one line',
+    inlineMd === 'Bring your **ideas** and *energy* today', JSON.stringify(inlineMd));
+
+  const blockMd = await t.evaluate(async () => {
+    const { domToMarkdown } = await import('/js/editor.js');
+    const el = document.querySelector('.rte-area');
+    el.innerHTML = '<h2>Title</h2><div>one</div><div><br></div><div>two</div>'
+      + '<ul><li>a</li><li>b</li></ul><ol><li>x</li></ol>';
+    return domToMarkdown(el);
+  });
+  check('blocks serialise to the markdown the renderer expects',
+    blockMd === '## Title\none\n\ntwo\n- a\n- b\n1. x', JSON.stringify(blockMd));
+
+  const linkMd = await t.evaluate(async () => {
+    const { domToMarkdown } = await import('/js/editor.js');
+    const el = document.querySelector('.rte-area');
+    el.innerHTML = 'see <a href="https://ex.com/p">the plan</a> and '
+      + '<a href="javascript:alert(1)">bad</a>';
+    return domToMarkdown(el);
+  });
+  check('a javascript: link is stripped to its text, https survives',
+    linkMd === 'see [the plan](https://ex.com/p) and bad', JSON.stringify(linkMd));
+
+  await t.screenshot({ path: `${SHOTS}/04a-editor.png` });
+
+  // Build the real post through the editor UI, exactly as a teacher would.
+  await t.$eval('.rte-area', (el) => { el.innerHTML = ''; });
+  await t.click('.rte-area');
+  await t.keyboard.type('Term 3 plans');
+  await selectAll();
+  await t.click('.rte-bar [data-cmd="formatBlock"][data-arg="h2"]');
+  await t.click('.rte-area');
+  await t.keyboard.press('End');
+  await t.keyboard.press('Enter');
+  await t.click('.rte-bar [data-cmd="formatBlock"][data-arg="h2"]');
+  await t.keyboard.type('Bring your ');
+  await t.click('.rte-bar [data-cmd="bold"]');
+  await t.keyboard.type('ideas');
+  await t.click('.rte-bar [data-cmd="bold"]');
+  await t.keyboard.press('Enter');
+  await t.click('.rte-bar [data-cmd="insertUnorderedList"]');
+  await t.keyboard.type('Fundraiser');
+  await t.keyboard.press('Enter');
+  await t.keyboard.type('Uniform survey');
+  await t.screenshot({ path: `${SHOTS}/04b-editor-full.png` });
   await toggle(t, '#cAttach', true);
   await t.waitForSelector('#fbTitle');
   await t.fill('#fbTitle', 'Are you coming?');
@@ -203,7 +297,9 @@ try {
     await t.isVisible('text=SRC meeting moved to Thursday'));
   check('markdown bold rendered', await t.isVisible('.body strong'));
   check('markdown list rendered', await t.isVisible('.body ul li'));
-  check('markdown link rendered', await t.isVisible('.body a[href="https://example.com/plan"]'));
+  check('heading rendered in the feed', await t.isVisible('.body h2'));
+  check('the feed shows no raw markdown syntax',
+    !(await t.$eval('.card .body', (el) => el.textContent)).includes('**'));
   await t.screenshot({ path: `${SHOTS}/05-feed-teacher.png`, fullPage: true });
 
   // Teacher controls sit behind the Manage toggle so the card stays readable.
@@ -367,10 +463,10 @@ try {
   await t.waitForSelector('#evTitle');
   await t.fill('#evTitle', 'SRC movie night');
   await t.fill('#evLoc', 'School hall');
-  check('the event description has the same formatting toolbar',
-    await t.isVisible('#evDesc') && await t.$eval('#evDesc',
-      (el) => !!el.previousElementSibling?.classList.contains('mdbar')));
-  await t.fill('#evDesc', 'Bring snacks and a pillow.');
+  check('the event description uses the same rich editor',
+    await t.isVisible('#evDescMount .rte-bar [data-cmd="bold"]'));
+  await t.click('#evDescMount .rte-area');
+  await t.keyboard.type('Bring snacks and a pillow.');
   await t.click('#evSave');
   await t.waitForTimeout(2000);
   check('event appears in the month list', await t.isVisible('text=SRC movie night'));

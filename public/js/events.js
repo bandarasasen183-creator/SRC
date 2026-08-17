@@ -21,8 +21,9 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, modal, renderBody,
-  todayISO, fmtDate, icon, downloadFile, markdownToolbar,
+  todayISO, fmtDate, icon, downloadFile,
 } from './ui.js';
+import { richEditor } from './editor.js';
 import { state, isTeacher } from './state.js';
 import { csvCell, downloadCsv } from './forms.js';
 
@@ -420,12 +421,9 @@ function openEventComposer(existing, onSaved) {
       <input type="text" id="evLoc" maxlength="120" placeholder="e.g. School hall">
     </label>
 
-    <!-- A div, not a label: clicking a toolbar button inside a <label> would
-         re-focus the textarea and blow away the selection we just set. -->
     <div class="field">
       <span class="lbl">Details</span>
-      <textarea id="evDesc" rows="4" maxlength="5000"
-        placeholder="What should people know?"></textarea>
+      <div id="evDescMount"></div>
     </div>
 
     <label class="switch">
@@ -442,8 +440,11 @@ function openEventComposer(existing, onSaved) {
   `);
 
   const r = m.root;
-  const descEl = $('#evDesc', r);
-  descEl.parentNode.insertBefore(markdownToolbar(descEl), descEl);
+  const desc = richEditor(existing?.description || '', {
+    placeholder: 'What should people know?',
+    renderMarkdown: renderBody,
+  });
+  $('#evDescMount', r).appendChild(desc.el);
 
   $('#evDate', r).value = existing?.date || selectedDate || todayISO();
   if (editing) {
@@ -451,7 +452,6 @@ function openEventComposer(existing, onSaved) {
     $('#evStart', r).value = existing.startTime || '';
     $('#evEnd', r).value = existing.endTime || '';
     $('#evLoc', r).value = existing.location || '';
-    $('#evDesc', r).value = existing.description || '';
     $('#evOpen', r).checked = existing.signupOpen !== false;
   }
 
@@ -468,7 +468,7 @@ function openEventComposer(existing, onSaved) {
       startTime: $('#evStart', r).value || '',
       endTime: $('#evEnd', r).value || '',
       location: $('#evLoc', r).value.trim(),
-      description: $('#evDesc', r).value,
+      description: desc.getMarkdown(),
       signupOpen: $('#evOpen', r).checked,
     };
 

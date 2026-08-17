@@ -6,8 +6,9 @@ import {
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, modal, renderBody, todayISO,
-  confirmDialog, fmtDate, icon, markdownToolbar,
+  confirmDialog, fmtDate, icon,
 } from './ui.js';
+import { richEditor } from './editor.js';
 import { state } from './state.js';
 import { formBuilder } from './forms.js';
 
@@ -31,14 +32,8 @@ export function openComposer(existing, onSaved) {
 
     <div class="field">
       <span class="lbl">Body</span>
-      <textarea id="cBody" rows="7" maxlength="20000"
-        placeholder="What's happening?"></textarea>
+      <div id="cBodyMount"></div>
     </div>
-
-    <details style="margin-bottom:14px">
-      <summary class="small muted" style="cursor:pointer">Preview</summary>
-      <div class="preview body" id="cPreview" style="margin-top:8px"></div>
-    </details>
 
     <label class="field">
       <span class="lbl">Date shown on the post</span>
@@ -84,14 +79,20 @@ export function openComposer(existing, onSaved) {
 
   const r = m.root;
   const titleEl = $('#cTitle', r);
-  const bodyEl = $('#cBody', r);
   const dateEl = $('#cDate', r);
   const pinEl = $('#cPinned', r);
   const comEl = $('#cComments', r);
   const notifyEl = $('#cNotify', r);
   const attachEl = $('#cAttach', r);
   const builderBox = $('#cBuilder', r);
-  const previewEl = $('#cPreview', r);
+
+  // The editor shows real bold and real headings, so there is no separate
+  // preview any more — the surface IS the preview.
+  const body = richEditor(existing?.body || '', {
+    placeholder: "What's happening?",
+    renderMarkdown: renderBody,
+  });
+  $('#cBodyMount', r).appendChild(body.el);
 
   let builder = null;
 
@@ -99,7 +100,6 @@ export function openComposer(existing, onSaved) {
   dateEl.value = todayISO();
   if (editing) {
     titleEl.value = existing.title || '';
-    bodyEl.value = existing.body || '';
     dateEl.value = existing.date || todayISO();
     pinEl.checked = !!existing.pinned;
     comEl.checked = !!existing.commentsOpen;
@@ -114,14 +114,6 @@ export function openComposer(existing, onSaved) {
     }
   }
 
-  const updatePreview = () => { previewEl.innerHTML = renderBody(bodyEl.value); };
-  bodyEl.addEventListener('input', updatePreview);
-  updatePreview();
-
-  // ---- markdown toolbar --------------------------------------------------
-  // Buttons instead of a line of raw syntax nobody wants to memorise.
-  bodyEl.parentNode.insertBefore(markdownToolbar(bodyEl, updatePreview), bodyEl);
-
   // ---- attach form toggle ------------------------------------------------
   attachEl.addEventListener('change', () => {
     builderBox.hidden = !attachEl.checked;
@@ -134,7 +126,7 @@ export function openComposer(existing, onSaved) {
   $('#cSave', r).onclick = async (ev) => {
     const btn = ev.currentTarget;
     const title = titleEl.value.trim();
-    const body = bodyEl.value;
+    const bodyMd = body.getMarkdown();
 
     if (!title) { toast('Give the announcement a title.', true); titleEl.focus(); return; }
 
@@ -166,7 +158,7 @@ export function openComposer(existing, onSaved) {
         }
 
         await updateDoc(doc(db, 'announcements', existing.id), {
-          title, body, date: dateEl.value || todayISO(),
+          title, body: bodyMd, date: dateEl.value || todayISO(),
           pinned: pinEl.checked, commentsOpen: comEl.checked,
           formId, editedAt: serverTimestamp(),
         });
@@ -182,7 +174,7 @@ export function openComposer(existing, onSaved) {
         }
 
         await addDoc(collection(db, 'announcements'), {
-          title, body,
+          title, body: bodyMd,
           date: dateEl.value || todayISO(),
           pinned: pinEl.checked,
           commentsOpen: comEl.checked,
@@ -199,7 +191,7 @@ export function openComposer(existing, onSaved) {
       // A future-dated announcement is usually about something happening on
       // that day — offer to put it on the Events calendar too.
       if (!editing && postedDate > todayISO()) {
-        offerMatchingEvent(title, postedDate, body);
+        offerMatchingEvent(title, postedDate, bodyMd);
       }
     } catch (err) {
       console.error(err);
