@@ -455,6 +455,17 @@ try {
   await t.waitForTimeout(300);
   await t.screenshot({ path: `${SHOTS}/15-features.png`, fullPage: true });
 
+  /* ---- 8b. build version is visible -------------------------------------- */
+  // Without this, "is my fix deployed?" is unanswerable from the running site.
+  await t.click('#meBtn');
+  await t.waitForTimeout(400);
+  const verLine = await t.$eval('.modal', (el) => el.textContent);
+  check('the account dialog names the running build',
+    /Version [0-9a-f]{7,}/.test(verLine), verLine.slice(-90));
+  check('the account dialog offers a Reload', await t.isVisible('#mReload'));
+  await t.keyboard.press('Escape');
+  await t.waitForTimeout(300);
+
   /* ---- 9. dark mode ------------------------------------------------------ */
   const dark = await newPage();
   await dark.emulateMedia({ colorScheme: 'dark' });

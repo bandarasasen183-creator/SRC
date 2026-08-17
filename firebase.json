@@ -1,5 +1,8 @@
 {
   "hosting": {
+    "predeploy": [
+      "node scripts/stamp-version.mjs"
+    ],
     "public": "public",
     "ignore": [
       "firebase.json",
@@ -14,11 +17,11 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(js|css)",
+        "source": "**/*.@(js|css|json)",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "public, max-age=3600"
+            "value": "no-cache"
           }
         ]
       },

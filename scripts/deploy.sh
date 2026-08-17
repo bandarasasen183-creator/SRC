@@ -207,7 +207,32 @@ fi
 
 step "Deploying security rules and the website"
 $FIREBASE deploy --only firestore:rules,hosting --project "$PROJECT_ID"
+
+# Don't take the CLI's word for it. Ask the live site which commit it is
+# serving and compare. "Deploy succeeded" and "the fix is live" are different
+# claims, and we have already been burned by the gap between them.
+step "Verifying what is actually live"
+
+LOCAL_SHA="$(node -e "try{console.log(require('./public/version.json').sha)}catch(e){}" 2>/dev/null || true)"
+LIVE_JSON="$(curl -fsS -m 20 -H 'Cache-Control: no-cache' "${SITE_URL}/version.json" 2>/dev/null || true)"
+LIVE_SHA="$(printf '%s' "$LIVE_JSON" | node -e "
+  let r=''; process.stdin.on('data',d=>r+=d).on('end',()=>{
+    try { console.log(JSON.parse(r).sha || ''); } catch { console.log(''); }
+  });" 2>/dev/null || true)"
+
+if [ -z "$LIVE_SHA" ]; then
+  warn "Could not read ${SITE_URL}/version.json — skipping the check."
+  echo "   Open that URL in a browser to see which build is serving."
+elif [ "$LIVE_SHA" = "$LOCAL_SHA" ]; then
+  green "Confirmed live: $LIVE_SHA (matches what was just built)"
+else
+  err "MISMATCH: the site is serving '$LIVE_SHA' but we just built '$LOCAL_SHA'."
+  err "The deploy did not take effect. Do not assume your change shipped."
+  exit 1
+fi
+
 green "Site is live: $SITE_URL"
+echo "   Check the running build any time at: ${SITE_URL}/version.json"
 
 # ---- 7. functions (only if the secret exists) -------------------------------
 

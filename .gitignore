@@ -10,3 +10,6 @@ ui-debug.log
 !.env.example
 .DS_Store
 # full-resolution logo master IS tracked — see scripts/build-icons.sh
+
+# Written at deploy time by scripts/stamp-version.mjs
+public/version.json

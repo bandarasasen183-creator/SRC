@@ -10,6 +10,7 @@ import {
 import { renderFeed, stopFeed } from './feed.js';
 import { renderAdmin } from './admin.js';
 import { renderEvents } from './events.js';
+import { initVersion, versionLabel, watchForUpdate } from './version.js';
 
 const appEl = $('#app');
 
@@ -99,7 +100,11 @@ function openMe() {
       <p class="small muted" style="margin:0">Optional — the emailed sign-in link always works.</p>
       <button class="btn danger block" id="mOut">${icon('logout', 16)} Sign out</button>
     </div>
+    <hr class="divider">
+    <p class="small muted" style="margin:0">${esc(versionLabel())}
+      <button class="btn ghost sm" id="mReload" style="margin-left:8px">Reload</button></p>
   `);
+  m.root.querySelector('#mReload').onclick = () => location.reload();
   m.root.querySelector('#mPass').onclick = () => { m.close(); openSetPassword(); };
   m.root.querySelector('#mOut').onclick = async () => {
     m.close();
@@ -118,6 +123,14 @@ function showSpinner() {
 
 async function boot() {
   showSpinner();
+
+  // Record which build this page is running, and notice if a newer one is
+  // deployed while the tab stays open. Failure here must never block sign-in.
+  initVersion()
+    .then(() => watchForUpdate((fresh) => {
+      toast(`A newer version (${fresh.sha}) is out. Reload to get it.`);
+    }))
+    .catch(() => {});
 
   // If this page load came from an emailed sign-in link, consume it first so
   // onAuthStateChanged fires with the signed-in user.
