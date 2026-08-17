@@ -4,7 +4,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseImport } from '../public/js/import-parse.js';
+import { parseImport, parseEventImport } from '../public/js/import-parse.js';
 
 const one = (o) => JSON.stringify([o]);
 
@@ -173,5 +173,102 @@ describe('the shipped Classroom archive is importable as-is', () => {
       assert.match(p.date, /^\d{4}-\d{2}-\d{2}$/, p.title);
       assert.ok(p.authorName, `${p.title} has no author`);
     }
+  });
+});
+
+describe('parseEventImport', () => {
+  const one = (o) => JSON.stringify([o]);
+  const ok = { title: 'Expo', date: '2026-09-10' };
+
+  test('a minimal event is accepted', () => {
+    const [e] = parseEventImport(one(ok)).events;
+    assert.equal(e.title, 'Expo');
+    assert.equal(e.date, '2026-09-10');
+    assert.equal(e.signupOpen, false);   // off unless asked for
+  });
+
+  test('sign-ups only open when explicitly true', () => {
+    assert.equal(parseEventImport(one({ ...ok, signupOpen: true })).events[0].signupOpen, true);
+    assert.equal(parseEventImport(one({ ...ok, signupOpen: 'yes' })).events[0].signupOpen, false);
+  });
+
+  test('a date is required — an event with no date is not an event', () => {
+    assert.match(parseEventImport(one({ title: 'x' })).errors[0], /2026-09-10/);
+  });
+
+  test('the rule limits are mirrored so errors name the field', () => {
+    assert.match(parseEventImport(one({ ...ok, title: 'x'.repeat(201) })).errors[0], /over 200/);
+    assert.match(parseEventImport(one({ ...ok, description: 'x'.repeat(5001) })).errors[0], /5,000/);
+    assert.match(parseEventImport(one({ ...ok, location: 'x'.repeat(121) })).errors[0], /over 120/);
+  });
+
+  test('times must be 24-hour HH:MM', () => {
+    assert.match(parseEventImport(one({ ...ok, startTime: '9am' })).errors[0], /09:00/);
+    assert.match(parseEventImport(one({ ...ok, endTime: '25:00' })).errors[0], /09:00/);
+    assert.deepEqual(parseEventImport(one({ ...ok, startTime: '09:00', endTime: '11:30' })).errors, []);
+  });
+
+  test('an event cannot end before it starts', () => {
+    const { errors } = parseEventImport(one({ ...ok, startTime: '11:00', endTime: '09:00' }));
+    assert.match(errors[0], /ends before it starts/);
+  });
+
+  test('events come back earliest first, then by time', () => {
+    const { events } = parseEventImport(JSON.stringify([
+      { title: 'later same day', date: '2026-09-10', startTime: '14:00' },
+      { title: 'next month', date: '2026-11-27' },
+      { title: 'morning', date: '2026-09-10', startTime: '09:00' },
+    ]));
+    assert.deepEqual(events.map((e) => e.title), ['morning', 'later same day', 'next month']);
+  });
+
+  test('errors name which event', () => {
+    const { errors } = parseEventImport(JSON.stringify([ok, { title: 'no date' }]));
+    assert.match(errors[0], /^Event 2:/);
+  });
+});
+
+describe('the shipped calendar is importable as-is', () => {
+  const file = readFileSync(new URL('../docs/classroom-events.json', import.meta.url), 'utf8');
+
+  test('parses with no errors', () => {
+    const { events, errors } = parseEventImport(file);
+    assert.deepEqual(errors, []);
+    assert.ok(events.length >= 10, `only ${events.length} events`);
+  });
+
+  test('every event has a real date and a title', () => {
+    for (const e of parseEventImport(file).events) {
+      assert.match(e.date, /^\d{4}-\d{2}-\d{2}$/, e.title);
+      assert.ok(e.title.length > 0);
+    }
+  });
+
+  test('the dates match the weekday each post claims', () => {
+    // The posts say "Sunday 16th of August", "Thursday 10th September" and so
+    // on. A date that lands on the wrong weekday means I mis-transcribed it.
+    const expected = {
+      '2026-08-03': 'Monday',    // "Monday 3 August 2026"
+      '2026-08-16': 'Sunday',    // "Sunday, 16 August 2026"
+      '2026-08-18': 'Tuesday',   // "Tuesday 18th"
+      '2026-08-21': 'Friday',    // "On Friday there is a football game"
+      '2026-09-10': 'Thursday',  // "Thursday 10th September"
+      '2026-11-27': 'Friday',    // "27th - 29th November"
+    };
+    for (const e of parseEventImport(file).events) {
+      const want = expected[e.date];
+      if (!want) continue;
+      const got = new Date(`${e.date}T00:00:00`).toLocaleDateString('en-AU', { weekday: 'long' });
+      assert.equal(got, want, `${e.title} — ${e.date} is a ${got}, the post says ${want}`);
+    }
+  });
+
+  test('sign-ups are open only for the things people volunteer for', () => {
+    const events = parseEventImport(file).events;
+    const open = events.filter((e) => e.signupOpen).map((e) => e.title);
+    assert.ok(open.some((t) => /Football game/.test(t)), 'the football game needs ten volunteers');
+    assert.ok(open.some((t) => /Community Connect Expo/.test(t)));
+    // An external application is not something to sign up for here.
+    assert.ok(!open.some((t) => /Changemakers/.test(t)));
   });
 });

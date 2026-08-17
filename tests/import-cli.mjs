@@ -67,6 +67,12 @@ async function seedProfile(uid, email, name, role) {
   if (!res.ok) throw new Error(`seed profile failed: ${await res.text()}`);
 }
 
+async function listEvents() {
+  const res = await fetch(`${FS}/events?pageSize=300`, { headers: owner });
+  const body = await res.json();
+  return body.documents || [];
+}
+
 async function listAnnouncements() {
   const res = await fetch(`${FS}/announcements?pageSize=300`, { headers: owner });
   const body = await res.json();
@@ -160,6 +166,27 @@ try {
   const dated = after.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.fields.date?.stringValue || ''));
   check('every post kept its original date', dated.length === archive.length);
 
+  /* ---- 2b. the calendar came across too ---------------------------------- */
+  const calendar = JSON.parse(readFileSync(new URL('../docs/classroom-events.json', import.meta.url), 'utf8'));
+  const events = await listEvents();
+  check('every event was added to the calendar',
+    events.length === calendar.length, `${events.length} of ${calendar.length}`);
+
+  const byEvTitle = new Map(events.map((d) => [d.fields.title.stringValue, d]));
+  const football = byEvTitle.get('Football game — student volunteers');
+  check('an event keeps its date, time and place',
+    football?.fields.date?.stringValue === '2026-08-21'
+    && football?.fields.startTime?.stringValue === '09:00'
+    && /bottom oval/i.test(football?.fields.location?.stringValue || ''),
+    JSON.stringify(football?.fields.date));
+  check('volunteer events have sign-ups open',
+    football?.fields.signupOpen?.booleanValue === true);
+  check('an external application does NOT have sign-ups open',
+    byEvTitle.get('South Coast Changemakers Forum (27–29 November)')
+      ?.fields.signupOpen?.booleanValue === false);
+  check('events are marked as imported',
+    football?.fields.importedFrom?.stringValue === 'Google Classroom');
+
   /* ---- 3. running it twice is safe --------------------------------------- */
   const second = await importCli(['--email', TEACHER]);
   const out2 = strip(second.out);
@@ -170,6 +197,8 @@ try {
   const afterTwice = await listAnnouncements();
   check('a second run creates no duplicates',
     afterTwice.length === archive.length, `${afterTwice.length} posts after two runs`);
+  check('a second run duplicates no events',
+    (await listEvents()).length === calendar.length);
 
   /* ---- 4. a student is refused ------------------------------------------- */
   await reset();
@@ -181,6 +210,7 @@ try {
   check('a student cannot import', asStudent.code !== 0, `exit ${asStudent.code}`);
   check('it explains why', /only teachers can post/i.test(out4), out4.slice(-200));
   check('and it wrote nothing', (await listAnnouncements()).length === 0);
+  check('and added no events either', (await listEvents()).length === 0);
 
   /* ---- 5. a wrong password is refused ------------------------------------ */
   const badPass = await importCli(['--email', STUDENT], { SRC_IMPORT_PASSWORD: 'wrong-password' });
@@ -256,7 +286,8 @@ try {
   await seedProfile(teacher2, TEACHER, 'Ms Jones', 'teacher');
   const dry = await importCli(['--email', TEACHER, '--dry-run']);
   check('--dry-run exits cleanly', dry.code === 0);
-  check('--dry-run writes nothing', (await listAnnouncements()).length === 0);
+  check('--dry-run writes nothing',
+    (await listAnnouncements()).length === 0 && (await listEvents()).length === 0);
   check('--dry-run says so', /nothing was written/i.test(strip(dry.out)));
 } catch (e) {
   fail++;

@@ -22,7 +22,9 @@
  *
  * Flags:
  *   --project <id>   Firebase project (default: from .firebaserc)
- *   --file <path>    JSON to import (default: docs/classroom-import.json)
+ *   --file <path>    Posts JSON (default: docs/classroom-import.json)
+ *   --events <path>  Events JSON (default: docs/classroom-events.json)
+ *   --no-events      Skip the calendar
  *   --dry-run        Validate and report, write nothing
  *   --emulator       Talk to the local emulators instead of the live project
  *   --email <addr>   Skip the email prompt
@@ -44,7 +46,7 @@ import {
   getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
 
-import { parseImport } from '../public/js/import-parse.js';
+import { parseImport, parseEventImport } from '../public/js/import-parse.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -71,6 +73,8 @@ const has = (name) => process.argv.includes(`--${name}`);
 const DRY = has('dry-run');
 const EMU = has('emulator');
 const FILE = resolve(root, arg('file', 'docs/classroom-import.json'));
+const EVENTS_FILE = resolve(root, arg('events', 'docs/classroom-events.json'));
+const SKIP_EVENTS = has('no-events');
 
 /* ---- project id ----------------------------------------------------------- */
 
@@ -199,6 +203,30 @@ console.log(C.green(`${posts.length} posts, ${totalComments} archived comments, 
 for (const p of posts) {
   console.log(`  ${p.date || '(undated)'}  ${p.title}${
     p.comments.length ? C.dim(` — ${p.comments.length} comment${p.comments.length > 1 ? 's' : ''}`) : ''}`);
+}
+
+let events = [];
+if (!SKIP_EVENTS) {
+  step('Reading the calendar');
+  let eraw = null;
+  try {
+    eraw = readFileSync(EVENTS_FILE, 'utf8');
+  } catch {
+    console.log(C.dim(`  no ${EVENTS_FILE} — skipping events`));
+  }
+  if (eraw !== null) {
+    const parsed = parseEventImport(eraw);
+    if (parsed.errors.length) {
+      console.error(C.red(`\n${parsed.errors.length} problem(s) in ${EVENTS_FILE}:`));
+      for (const e of parsed.errors) console.error(`  - ${e}`);
+      die('Nothing was imported.');
+    }
+    events = parsed.events;
+    console.log(C.green(`${events.length} events, earliest first`));
+    for (const e of events) {
+      console.log(`  ${e.date}  ${e.title}${e.signupOpen ? C.dim(' — sign-ups open') : ''}`);
+    }
+  }
 }
 
 if (DRY) {
@@ -345,9 +373,49 @@ for (const p of posts) {
   }
 }
 
+let evCreated = 0;
+let evSkipped = 0;
+
+if (events.length) {
+  step(`Adding ${events.length} events to the calendar`);
+  for (const e of events) {
+    const id = `import-${e.date}-${slug(e.title)}`;
+    const ref = doc(db, 'events', id);
+    try {
+      if ((await getDoc(ref)).exists()) {
+        evSkipped++;
+        console.log(`  ${C.dim('already there')}  ${e.title}`);
+        continue;
+      }
+      await setDoc(ref, {
+        title: e.title,
+        date: e.date,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        location: e.location,
+        description: e.description,
+        signupOpen: e.signupOpen,
+        createdBy: user.uid,          // the rules require this to be you
+        createdByName: me.name,
+        importedFrom: 'Google Classroom',
+        createdAt: serverTimestamp(),
+      });
+      evCreated++;
+      console.log(`  ${C.green('added')}         ${e.title}`);
+    } catch (err) {
+      failed.push({ title: e.title, error: err?.code || err?.message || String(err) });
+      console.log(`  ${C.red('failed')}        ${e.title} — ${err?.code || err?.message}`);
+    }
+  }
+}
+
 step('Done');
 console.log(`  imported     ${created}`);
 console.log(`  already there ${skipped}`);
+if (events.length) {
+  console.log(`  events added ${evCreated}`);
+  console.log(`  events there ${evSkipped}`);
+}
 if (failed.length) console.log(C.red(`  failed       ${failed.length}`));
 console.log(C.dim('\n  No emails were sent — every post was written with notifications off.'));
 if (!EMU) console.log(`  Open https://${PROJECT}.web.app to see them.\n`);

@@ -1,0 +1,74 @@
+[
+  {
+    "title": "Final Year 12 SRC gathering",
+    "date": "2026-08-03",
+    "location": "Q10",
+    "description": "The last SRC meeting for the Year 12 leaders. Break 1.\n\nJunior SRC organised a surprise.",
+    "signupOpen": false
+  },
+  {
+    "title": "Outward Bound applications close",
+    "date": "2026-08-14",
+    "startTime": "15:00",
+    "description": "Deadline for the Leadership Program Application Questionnaire for the South Coast Outward Bound camp. Year 8.",
+    "signupOpen": false
+  },
+  {
+    "title": "Bunnings BBQ fundraiser",
+    "date": "2026-08-16",
+    "startTime": "08:00",
+    "location": "Bunnings, Ulladulla",
+    "description": "UHS P&C sausage sizzle. Sausage sandwiches and sweet treats.\n\nStudent volunteers were wanted for this — contact the school office on 4455 1799.",
+    "signupOpen": false
+  },
+  {
+    "title": "SRC meeting — fundraising",
+    "date": "2026-08-17",
+    "description": "High priority agenda item: fundraising ideas.\n\n- A bake sale towards a replacement scooter and helmet\n- A possible GoFundMe for a second student\n\nBring ideas.",
+    "signupOpen": false
+  },
+  {
+    "title": "Youth Advisory Committee session",
+    "date": "2026-08-18",
+    "location": "Library, Lower Level",
+    "description": "Sessions 3 & 4. A council member will be there to listen and capture your ideas about what helps young people feel empowered, what barriers exist, and what you would like to see.\n\nThere are no right or wrong answers.",
+    "signupOpen": true
+  },
+  {
+    "title": "Football volunteers — briefing",
+    "date": "2026-08-20",
+    "location": "Student services",
+    "description": "Session 5. Briefing for the leadership team helping at Friday's football game: QR codes, uniform, roles and responsibilities.\n\nIf you signed up for the game, come to this.",
+    "signupOpen": true
+  },
+  {
+    "title": "Football game — student volunteers",
+    "date": "2026-08-21",
+    "startTime": "09:00",
+    "endTime": "11:30",
+    "location": "Bottom oval and MPC street entry",
+    "description": "**Ten students needed, in full uniform.** Game starts 10am on the bottom oval.\n\n### Five at the MPC street entry\n\n- Meet the visiting team and show them to the MPC changerooms\n- QR code for coaches and parents to sign in\n- Show visitors where the toilets are, and walk them there during the game\n\n### Five at the bottom oval gate, near the cricket nets\n\n- Meet UHS parents and carers\n- QR code for visitors to register\n- Show them to the spectator area — northwestern side, they have been asked to bring folding chairs\n\nBriefing is Thursday session 5 at student services.",
+    "signupOpen": true
+  },
+  {
+    "title": "Outward Bound Leadership Camp (7–11 September)",
+    "date": "2026-09-07",
+    "location": "South Coast",
+    "description": "Five-day leadership program for Year 8, running Monday 7 to Friday 11 September.\n\nHigh ropes, hiking and navigation, leadership initiatives, camping and values-based challenges, run by Outward Bound staff.\n\n18 fully funded places. Successful applicants contribute $95 towards travel. Applications closed 14 August — this is for those who were selected.",
+    "signupOpen": false
+  },
+  {
+    "title": "Community Connect Expo",
+    "date": "2026-09-10",
+    "location": "Dunn-Lewis Centre",
+    "description": "Over 100 stalls celebrating local community organisations and volunteers, run by Community Connect Southern Shoalhaven.\n\n**Volunteers needed** to help run stalls, welcome guests, and run activities on the day. Put your name down here.",
+    "signupOpen": true
+  },
+  {
+    "title": "South Coast Changemakers Forum (27–29 November)",
+    "date": "2026-11-27",
+    "location": "Waterslea Conference Centre",
+    "description": "Three-day camp for young people aged 14–17, Friday 27 to Sunday 29 November.\n\nConnect, learn, and design your own project for positive change on the South Coast. Over the three days participants design and pitch a project, then get the chance to complete it in the Changemakers Program.\n\nApply at [sonderyouth.com/south-coast-changemakers-forum](https://www.sonderyouth.com/south-coast-changemakers-forum) — this is an external application, not a sign-up here.",
+    "signupOpen": false
+  }
+]

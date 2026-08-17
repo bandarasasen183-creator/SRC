@@ -138,3 +138,81 @@ export function parseImport(text) {
   return { posts, errors };
 }
 
+
+/* =============================================================================
+   Events
+   ========================================================================== */
+
+const MAX_EVENTS = 100;
+
+/**
+ * Validate a list of calendar events.
+ *
+ * Mirrors the limits in firestore.rules deliberately: title 200, description
+ * 5000, an ISO date. Catching an over-long title here produces "Event 4: title
+ * is over 200 characters" instead of a permission-denied from the server that
+ * names nothing.
+ *
+ * All-or-nothing, like parseImport, and for the same reason.
+ */
+export function parseEventImport(text) {
+  const errors = [];
+  let raw;
+
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    return { events: [], errors: [`That is not valid JSON: ${e.message}`] };
+  }
+  if (!Array.isArray(raw)) {
+    return { events: [], errors: ['Expected a JSON array of events.'] };
+  }
+  if (raw.length > MAX_EVENTS) {
+    return { events: [], errors: [`${raw.length} events is more than the ${MAX_EVENTS} limit.`] };
+  }
+
+  const events = [];
+  raw.forEach((e, i) => {
+    const at = `Event ${i + 1}`;
+    if (!e || typeof e !== 'object') { errors.push(`${at}: not an object.`); return; }
+
+    const title = String(e.title ?? '').trim();
+    const date = String(e.date ?? '').trim();
+    const description = String(e.description ?? '');
+    const location = String(e.location ?? '').trim();
+    const startTime = String(e.startTime ?? '').trim();
+    const endTime = String(e.endTime ?? '').trim();
+
+    if (!title) { errors.push(`${at}: needs a title.`); return; }
+    if (title.length > 200) { errors.push(`${at}: title is over 200 characters.`); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      errors.push(`${at}: date must look like 2026-09-10.`);
+      return;
+    }
+    if (description.length > 5000) { errors.push(`${at}: description is over 5,000 characters.`); return; }
+    if (location.length > 120) { errors.push(`${at}: location is over 120 characters.`); return; }
+    for (const [label, t] of [['startTime', startTime], ['endTime', endTime]]) {
+      if (t && !/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) {
+        errors.push(`${at}: ${label} must look like 09:00.`);
+        return;
+      }
+    }
+    if (startTime && endTime && endTime < startTime) {
+      errors.push(`${at}: ends before it starts.`);
+      return;
+    }
+
+    events.push({
+      title, date, description, location, startTime, endTime,
+      signupOpen: e.signupOpen === true,
+    });
+  });
+
+  if (errors.length) return { events: [], errors };
+
+  events.sort((a, b) => (a.date === b.date
+    ? (a.startTime || '99').localeCompare(b.startTime || '99')
+    : a.date.localeCompare(b.date)));
+
+  return { events, errors };
+}

@@ -98,9 +98,14 @@ cannot read or write.
 npm run import
 ```
 
-That reads `docs/classroom-import.json` (your Classroom stream — 12 posts and
-18 comments), signs you in, and writes them into the feed. It asks for your
-email and password and nothing else. No project ID, no pasting, no clicking.
+That reads two files, signs you in, and writes both:
+
+* `docs/classroom-import.json` — the Classroom stream, 12 posts and 18 comments
+* `docs/classroom-events.json` — the 10 dated things mentioned in those posts,
+  as real calendar events (`--no-events` skips them)
+
+It asks how you want to sign in and nothing else. No project ID, no pasting, no
+clicking.
 
 It offers two ways to sign in:
 
