@@ -370,6 +370,15 @@ export function todayISO() {
 /* ---- misc ---------------------------------------------------------------- */
 
 export function busy(btn, on, labelWhileBusy = 'Working…') {
+  // A null element here is nearly always event.currentTarget read after an
+  // await, where the browser has already reset it. That used to throw from
+  // inside a catch block, so the error handler died and the button stayed
+  // disabled on "Saving…" forever. Complain, but do not take the handler down.
+  if (!btn) {
+    console.error('busy(): no element. Capture the button before any await — '
+      + 'event.currentTarget is null once the event has finished dispatching.');
+    return;
+  }
   if (on) {
     btn.dataset.label = btn.textContent;
     btn.disabled = true;

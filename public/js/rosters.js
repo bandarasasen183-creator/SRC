@@ -173,7 +173,8 @@ function slotRow(r, slot, people, mount) {
   if (full) btn.title = 'This slot is full';
 
   btn.onclick = async (e) => {
-    busy(e.currentTarget, true, '…');
+    const pressed = e.currentTarget;
+    busy(pressed, true, '…');
     const ref = doc(db, 'rosters', r.id, 'claims', slot.id, 'people', state.user.uid);
     try {
       if (mine) {
@@ -189,7 +190,7 @@ function slotRow(r, slot, people, mount) {
       await refresh(mount);
     } catch (err) {
       console.error(err);
-      busy(e.currentTarget, false);
+      busy(pressed, false);
       toast(friendlyError(err), true);
     }
   };

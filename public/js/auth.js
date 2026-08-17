@@ -4,12 +4,14 @@
 // staff who prefer them, and are never required of anyone.
 
 import {
-  auth, db,
+  auth, db, signOut,
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword,
   doc, getDoc, setDoc, serverTimestamp,
 } from './fb.js';
-import { esc, h, $, toast, busy, friendlyError, modal, logoSvg, icon } from './ui.js';
+import {
+  esc, h, $, toast, busy, friendlyError, confirmDialog, modal, logoSvg, icon,
+} from './ui.js';
 import { normaliseEmail } from './emails.js';
 
 const PENDING_EMAIL_KEY = 'src.pendingEmail';
@@ -353,20 +355,32 @@ export function openSetPassword() {
   `);
   m.root.querySelector('#pCancel').onclick = m.close;
   m.root.querySelector('#pSave').onclick = async (e) => {
+    // Captured now, while the event is still dispatching. Reading
+    // e.currentTarget after the await below would give null.
+    const btn = e.currentTarget;
     const p1 = m.root.querySelector('#p1').value;
     const p2 = m.root.querySelector('#p2').value;
     if (p1.length < 6) { toast('Use at least 6 characters.', true); return; }
     if (p1 !== p2) { toast("Those two passwords don't match.", true); return; }
-    busy(e.currentTarget, true, 'Saving…');
+    busy(btn, true, 'Saving…');
     try {
       await updatePassword(auth.currentUser, p1);
       m.close();
       toast('Password set. You can still use the email link too.');
     } catch (err) {
-      busy(e.currentTarget, false);
-      // Firebase requires a recent sign-in for this.
+      busy(btn, false);
+      console.error(err);
+      // Firebase refuses to change a password on a stale session. This is the
+      // common case, not an edge case: most people set a password days after
+      // they first signed in with a link.
       if (err?.code === 'auth/requires-recent-login') {
-        toast('For security, sign in again with a fresh email link, then set the password.', true);
+        m.close();
+        confirmDialog(
+          'Sign in again first',
+          'For security, a password can only be set just after signing in. '
+          + 'Sign out and back in with a fresh email link, then set it — it takes a minute.',
+          { danger: false, okLabel: 'Sign out now' }
+        ).then((ok) => { if (ok) signOut(auth); });
       } else {
         toast(friendlyError(err), true);
       }

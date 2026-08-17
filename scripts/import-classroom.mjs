@@ -25,6 +25,8 @@
  *   --file <path>    JSON to import (default: docs/classroom-import.json)
  *   --dry-run        Validate and report, write nothing
  *   --emulator       Talk to the local emulators instead of the live project
+ *   --email <addr>   Skip the email prompt
+ *   --link           Sign in with an emailed link instead of a password
  */
 
 import { readFileSync } from 'node:fs';
@@ -34,7 +36,8 @@ import { dirname, join, resolve } from 'node:path';
 
 import { initializeApp } from 'firebase/app';
 import {
-  getAuth, signInWithEmailAndPassword, connectAuthEmulator, signOut,
+  getAuth, signInWithEmailAndPassword, sendSignInLinkToEmail,
+  signInWithEmailLink, isSignInWithEmailLink, connectAuthEmulator, signOut,
 } from 'firebase/auth';
 import {
   getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, serverTimestamp,
@@ -193,24 +196,71 @@ if (EMU) {
 const email = arg('email') || await ask('  Email: ');
 if (!email) die('No email given.');
 
-const password = process.env.SRC_IMPORT_PASSWORD || await ask('  Password: ', { hidden: true });
-if (!password) {
-  die('No password given.\n'
-    + '  If you only ever sign in with the emailed link, open the site, tap your\n'
-    + '  name in the top right, and choose "Set or change a password" first.');
+// Two ways in, because a password is not guaranteed to exist. The app signs
+// people in with emailed links by default, so requiring a password here would
+// mean setting one first just to run an import.
+const envPassword = process.env.SRC_IMPORT_PASSWORD;
+let mode = has('link') ? 'link' : (envPassword ? 'password' : null);
+
+if (!mode) {
+  console.log('');
+  console.log('  1) Email me a sign-in link   (no password needed)');
+  console.log('  2) I have a password');
+  const pick = await ask('  Which? [1] ');
+  mode = pick.trim() === '2' ? 'password' : 'link';
 }
 
 let user;
-try {
-  ({ user } = await signInWithEmailAndPassword(auth, email, password));
-} catch (e) {
-  const code = e?.code || '';
-  if (/wrong-password|invalid-credential/.test(code)) {
-    die('Wrong email or password.\n'
-      + '  No password set yet? Open the site, tap your name, "Set or change a password".');
+
+if (mode === 'password') {
+  const password = envPassword || await ask('  Password: ', { hidden: true });
+  if (!password) die('No password given.');
+  try {
+    ({ user } = await signInWithEmailAndPassword(auth, email, password));
+  } catch (e) {
+    const code = e?.code || '';
+    if (/wrong-password|invalid-credential|user-not-found/.test(code)) {
+      die('Wrong email or password.\n'
+        + '  No password set? Re-run and choose option 1 — the emailed link needs no password.');
+    }
+    die(`Could not sign in: ${code || e.message}`);
   }
-  die(`Could not sign in: ${code || e.message}`);
+} else {
+  const url = EMU ? 'http://127.0.0.1:5000/?signin=1' : `https://${PROJECT}.web.app/?signin=1`;
+  try {
+    await sendSignInLinkToEmail(auth, email, { url, handleCodeInApp: true });
+  } catch (e) {
+    die(`Could not send the sign-in link: ${e?.code || e.message}`);
+  }
+
+  console.log(C.green(`\n  Sent a sign-in link to ${email}.`));
+  console.log('');
+  console.log(C.yellow('  COPY the link — do not open it.'));
+  console.log(C.dim('  Right-click (or long-press) the button in the email and choose'));
+  console.log(C.dim('  "Copy Link Address", then paste it below. Opening it in a browser'));
+  console.log(C.dim('  uses the code up, and this needs to use it instead.'));
+  console.log(C.dim('  Check your spam folder if it is not there in a minute.'));
+  console.log('');
+
+  const link = process.env.SRC_IMPORT_LINK || await ask('  Paste link: ');
+  if (!link) die('Nothing pasted.');
+  if (!isSignInWithEmailLink(auth, link)) {
+    die('That does not look like a sign-in link.\n'
+      + '  It should be a long URL containing "oobCode=".');
+  }
+  try {
+    ({ user } = await signInWithEmailLink(auth, email, link));
+  } catch (e) {
+    const code = e?.code || '';
+    if (/invalid-action-code|expired-action-code/.test(code)) {
+      die('That link has expired or was already used.\n'
+        + '  If you opened it in a browser, the code is spent — re-run and copy the\n'
+        + '  link this time instead of opening it.');
+    }
+    die(`Could not sign in: ${code || e.message}`);
+  }
 }
+
 console.log(C.green(`  signed in as ${user.email}`));
 
 step('Checking your account');

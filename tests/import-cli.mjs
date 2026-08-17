@@ -89,6 +89,36 @@ async function importCli(extraArgs = [], env = {}) {
   }
 }
 
+/**
+ * The newest unused sign-in link the Auth emulator has "sent" to an address.
+ * This is exactly the URL a real email would carry.
+ */
+async function latestSignInLink(email) {
+  const res = await fetch(`${AUTH}/emulator/v1/projects/demo-src/oobCodes`);
+  const { oobCodes = [] } = await res.json();
+  const mine = oobCodes.filter((c) => c.email === email && c.requestType === 'EMAIL_SIGNIN');
+  if (!mine.length) throw new Error(`no sign-in link was sent to ${email}`);
+  return mine[mine.length - 1].oobLink;
+}
+
+/**
+ * Run the import in link mode. The script sends the link and then waits for a
+ * paste, so feed it the code the emulator captured — the same thing a person
+ * does when they copy the link out of their inbox.
+ */
+async function importViaLink(email) {
+  // Send first, in a throwaway run, so a link exists to hand back.
+  await importCli(['--email', email, '--link'],
+    { SRC_IMPORT_PASSWORD: '', SRC_IMPORT_LINK: 'not-a-link' });
+  const link = await latestSignInLink(email);
+  const result = await importCli(['--email', email, '--link'],
+    { SRC_IMPORT_PASSWORD: '', SRC_IMPORT_LINK: link });
+  // Hand back the link that was actually consumed. Asking for "the latest"
+  // afterwards would return the fresh one this run also sent, which is not
+  // spent at all — that mistake made the reuse test pass for the wrong reason.
+  return { ...result, usedLink: link };
+}
+
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 try {
@@ -164,6 +194,34 @@ try {
   check('a file that is not a post array is refused', badFile.code !== 0);
   check('it names the problem', /array of posts/i.test(out6), out6.slice(-200));
   check('it refuses BEFORE asking for a password', !out6.includes('Signing in'));
+
+  /* ---- 6b. signing in with an emailed link, no password at all ----------- */
+  // The app signs people in with links by default, so requiring a password
+  // here would mean setting one just to run an import.
+  await reset();
+  const linkUid = await makeAccount(TEACHER);
+  await seedProfile(linkUid, TEACHER, 'Ms Jones', 'teacher');
+
+  const viaLink = await importViaLink(TEACHER);
+  const out6b = strip(viaLink.out);
+  check('a pasted sign-in link works with no password',
+    viaLink.code === 0, `exit ${viaLink.code}\n${out6b.slice(-600)}`);
+  check('link mode imports the whole archive',
+    (await listAnnouncements()).length === archive.length);
+  check('link mode tells you to copy rather than open the link',
+    /COPY the link/i.test(out6b));
+
+  // A link that has already been used must not quietly half-work.
+  const reused = await importCli(['--email', TEACHER, '--link'],
+    { SRC_IMPORT_PASSWORD: '', SRC_IMPORT_LINK: viaLink.usedLink });
+  const out6c = strip(reused.out);
+  check('a spent link is refused with an explanation',
+    reused.code !== 0 && /expired or was already used/i.test(out6c), out6c.slice(-300));
+
+  const notALink = await importCli(['--email', TEACHER, '--link'],
+    { SRC_IMPORT_PASSWORD: '', SRC_IMPORT_LINK: 'https://example.com/nope' });
+  check('pasting something that is not a link is refused',
+    notALink.code !== 0 && /does not look like a sign-in link/i.test(strip(notALink.out)));
 
   /* ---- 7. dry run writes nothing ---------------------------------------- */
   await reset();

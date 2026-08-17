@@ -102,9 +102,14 @@ That reads `docs/classroom-import.json` (your Classroom stream — 12 posts and
 18 comments), signs you in, and writes them into the feed. It asks for your
 email and password and nothing else. No project ID, no pasting, no clicking.
 
-**You need a password on your account first.** If you only ever sign in with the
-emailed link: open the site, tap your name in the top right, choose *Set or
-change a password*. One time only.
+It offers two ways to sign in:
+
+1. **Email me a sign-in link** — no password needed. It sends a link, you
+   **copy** it out of your inbox (right-click the button → *Copy Link Address*)
+   and paste it into the terminal. Copy it rather than opening it: opening it in
+   a browser uses the code up.
+2. **Password** — if you have set one under your name → *Set or change a
+   password*.
 
 Useful flags:
 
@@ -113,6 +118,7 @@ Useful flags:
 | `--dry-run` | lists what would be imported, writes nothing |
 | `--file <path>` | import a different JSON file |
 | `--project <id>` | override the project (defaults to `.firebaserc`) |
+| `--link` | skip the menu and go straight to the email-link route |
 
 Things it guarantees, all covered by `npm run test:import`:
 

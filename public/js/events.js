@@ -283,7 +283,8 @@ async function openEvent(ev, mount) {
             <button class="btn ghost sm" id="evCancelSignup">${icon('x', 14)} Remove my signup</button>
           </div>`));
         signupBox.querySelector('#evCancelSignup').onclick = async (e) => {
-          busy(e.currentTarget, true, '…');
+          const btn = e.currentTarget;
+          busy(btn, true, '…');
           try {
             await deleteDoc(doc(db, 'events', ev.id, 'signups', state.user.uid));
             await deleteDoc(doc(db, 'users', state.user.uid, 'mySignups', ev.id));
@@ -291,13 +292,14 @@ async function openEvent(ev, mount) {
             toast('Taken off the list.');
             drawMine(false);
             drawList(mount);
-          } catch (err) { toast(friendlyError(err), true); busy(e.currentTarget, false); }
+          } catch (err) { toast(friendlyError(err), true); busy(btn, false); }
         };
       } else {
         signupBox.replaceChildren(h(`
           <button class="btn block" id="evSignup">${icon('check', 16)} Sign up for this</button>`));
         signupBox.querySelector('#evSignup').onclick = async (e) => {
-          busy(e.currentTarget, true, 'Signing up…');
+          const btn = e.currentTarget;
+          busy(btn, true, 'Signing up…');
           try {
             await setDoc(doc(db, 'events', ev.id, 'signups', state.user.uid), {
               uid: state.user.uid,
@@ -313,7 +315,7 @@ async function openEvent(ev, mount) {
             toast("You're on the list.");
             drawMine(true);
             drawList(mount);
-          } catch (err) { toast(friendlyError(err), true); busy(e.currentTarget, false); }
+          } catch (err) { toast(friendlyError(err), true); busy(btn, false); }
         };
       }
     };
@@ -457,6 +459,7 @@ function openEventComposer(existing, onSaved) {
 
   $('#evCancel', r).onclick = m.close;
   $('#evSave', r).onclick = async (e) => {
+    const btn = e.currentTarget;
     const title = $('#evTitle', r).value.trim();
     const date = $('#evDate', r).value;
     if (!title) { toast('Give the event a name.', true); return; }
@@ -472,7 +475,7 @@ function openEventComposer(existing, onSaved) {
       signupOpen: $('#evOpen', r).checked,
     };
 
-    busy(e.currentTarget, true, 'Saving…');
+    busy(btn, true, 'Saving…');
     try {
       if (editing) {
         await updateDoc(doc(db, 'events', existing.id), {
@@ -493,7 +496,7 @@ function openEventComposer(existing, onSaved) {
       toast(editing ? 'Event updated.' : 'Event added.');
       onSaved?.();
     } catch (err) {
-      busy(e.currentTarget, false);
+      busy(btn, false);
       toast(friendlyError(err), true);
     }
   };

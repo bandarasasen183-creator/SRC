@@ -207,16 +207,18 @@ function card(a, prevSeen = Infinity) {
 
     const pin = h(`<button class="btn ghost sm">${icon('bookmark', 14)} ${a.pinned ? 'Unpin' : 'Pin'}</button>`);
     pin.onclick = async (e) => {
-      busy(e.currentTarget, true, '…');
+      const btn = e.currentTarget;
+      busy(btn, true, '…');
       try { await updateDoc(doc(db, 'announcements', a.id), { pinned: !a.pinned }); }
-      catch (err) { toast(friendlyError(err), true); busy(e.currentTarget, false); }
+      catch (err) { toast(friendlyError(err), true); busy(btn, false); }
     };
 
     const close = h(`<button class="btn ghost sm">${icon(a.commentsOpen ? 'lock' : 'unlock', 14)} ${a.commentsOpen ? 'Close comments' : 'Open comments'}</button>`);
     close.onclick = async (e) => {
-      busy(e.currentTarget, true, '…');
+      const btn = e.currentTarget;
+      busy(btn, true, '…');
       try { await updateDoc(doc(db, 'announcements', a.id), { commentsOpen: !a.commentsOpen }); }
-      catch (err) { toast(friendlyError(err), true); busy(e.currentTarget, false); }
+      catch (err) { toast(friendlyError(err), true); busy(btn, false); }
     };
 
     const del = h(`<button class="btn danger sm">${icon('trash', 14)} Delete</button>`);
