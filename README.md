@@ -92,6 +92,49 @@ cannot read or write.
 
 ---
 
+## 2b. Import the old Classroom posts — ONE COMMAND
+
+```
+npm run import
+```
+
+That reads `docs/classroom-import.json` (your Classroom stream — 12 posts and
+18 comments), signs you in, and writes them into the feed. It asks for your
+email and password and nothing else. No project ID, no pasting, no clicking.
+
+**You need a password on your account first.** If you only ever sign in with the
+emailed link: open the site, tap your name in the top right, choose *Set or
+change a password*. One time only.
+
+Useful flags:
+
+| flag | what it does |
+| --- | --- |
+| `--dry-run` | lists what would be imported, writes nothing |
+| `--file <path>` | import a different JSON file |
+| `--project <id>` | override the project (defaults to `.firebaserc`) |
+
+Things it guarantees, all covered by `npm run test:import`:
+
+* **Nobody is emailed.** Every post is written with notifications off. Twelve
+  posts would otherwise be twelve mailouts to the whole roster, which is most of
+  Resend's 100/day in one command.
+* **Safe to run twice.** Each post gets an id derived from its date and title,
+  and existing ids are skipped. A second run says "already there" 12 times.
+* **It signs in as you, not as a service account.** A service-account key is a
+  JSON file that grants full project access and bypasses every security rule.
+  This uses your normal teacher login and the ordinary client SDK, so the rules
+  check every write exactly as they do from the website. A student running it is
+  refused, and that is tested.
+* **It validates before asking for your password**, so a broken file costs you
+  nothing.
+
+The comments come in as a labelled read-only archive under each post, not as
+real comments. They cannot be real comments: the rules require every comment to
+carry its author's own account and the name on their own profile, and the people
+who wrote these have no account here. Faking that would break the one promise
+the comment system makes.
+
 ## 3. Email provider — Resend (your call), with one real limit
 
 You supplied a Resend key, so the code ships configured for **Resend**. Switching providers is
