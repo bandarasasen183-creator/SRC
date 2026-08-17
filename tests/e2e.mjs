@@ -380,6 +380,54 @@ try {
   await t.screenshot({ path: `${SHOTS}/13-events.png`, fullPage: true });
   await s.screenshot({ path: `${SHOTS}/14-events-student.png`, fullPage: true });
 
+  /* ---- 8c. new features --------------------------------------------------- */
+  // "Coming up" strip: the event created above is in the future? use today's.
+  await t.click('[data-route="feed"]');
+  await t.waitForTimeout(2000);
+  const hasUpNext = await t.isVisible('.upnext');
+  check('"Coming up" strip appears when events exist', hasUpNext);
+  if (hasUpNext) {
+    check('"Coming up" lists the event', await t.isVisible('.upnext >> text=SRC movie night'));
+    check('"Coming up" links to the calendar', await t.isVisible('.upnext a[href="#/events"]'));
+  }
+
+  // Feed search
+  await t.fill('#feedSearch', 'zzzznomatch');
+  await t.waitForTimeout(300);
+  check('feed search filters to no matches', await t.isVisible('text=No matches'));
+  await t.fill('#feedSearch', 'Thursday');
+  await t.waitForTimeout(300);
+  check('feed search finds by title',
+    await t.isVisible('text=SRC meeting moved to Thursday'));
+  await t.fill('#feedSearch', '');
+  await t.waitForTimeout(300);
+
+  // Roster search + remind-all
+  await t.click('[data-route="admin"]');
+  await t.waitForSelector('#rosterSearch', { timeout: 10000 });
+  await t.waitForTimeout(1200);
+  check('roster search box exists', await t.isVisible('#rosterSearch'));
+  await t.fill('#rosterSearch', 'amy.wong');
+  await t.waitForTimeout(300);
+  const visibleRows = await t.$$eval('#rosterBox tbody tr',
+    (rows) => rows.filter((r) => !r.hidden).length);
+  check('roster search narrows to one row', visibleRows === 1, `rows=${visibleRows}`);
+  await t.fill('#rosterSearch', 'nobodyxyz');
+  await t.waitForTimeout(300);
+  check('roster search shows a no-match note', await t.isVisible('#rosterNone'));
+  await t.fill('#rosterSearch', '');
+  await t.waitForTimeout(300);
+
+  check('"Remind all" button appears for un-signed-in students',
+    await t.isVisible('#remindAll'));
+  await t.click('#remindAll');
+  await t.waitForTimeout(500);
+  check('"Remind all" confirms with a count and quota warning',
+    await t.isVisible('text=/daily email allowance/'));
+  await t.click('button:has-text("Cancel")');
+  await t.waitForTimeout(300);
+  await t.screenshot({ path: `${SHOTS}/15-features.png`, fullPage: true });
+
   /* ---- 9. dark mode ------------------------------------------------------ */
   const dark = await newPage();
   await dark.emulateMedia({ colorScheme: 'dark' });

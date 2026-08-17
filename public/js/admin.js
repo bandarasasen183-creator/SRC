@@ -54,6 +54,11 @@ export async function renderAdmin(mount) {
           <button class="btn ghost sm" id="rosterCsv">${icon('download', 14)} CSV</button>
           <button class="btn ghost sm" id="refresh">${icon('refresh', 14)} Refresh</button>
         </div>
+        <label class="searchbox" style="margin:10px 0 4px">
+          ${icon('search', 15)}
+          <input type="text" id="rosterSearch" class="grow" placeholder="Search name or email"
+                 autocomplete="off" aria-label="Search the roster">
+        </label>
         <div id="rosterBox"><div class="spinner"></div></div>
       </div>
     </div>
@@ -200,10 +205,12 @@ async function loadRoster(mount) {
 
     box.replaceChildren(h(`
       <div>
-        <div class="row small muted" style="margin-bottom:10px;gap:14px">
+        <div class="row small muted" style="margin-bottom:10px;gap:14px;flex-wrap:wrap">
           <span><strong>${rows.length}</strong> invited</span>
           <span><strong style="color:var(--brand)">${signedIn}</strong> signed in</span>
           <span><strong style="color:var(--warn)">${pending}</strong> haven't yet</span>
+          <span class="grow"></span>
+          ${pending ? `<button class="btn subtle sm" id="remindAll">${icon('send', 13)} Remind all ${pending}</button>` : ''}
         </div>
         <div class="tablewrap">
           <table>
@@ -231,6 +238,54 @@ async function loadRoster(mount) {
         ${rows.length ? '' : '<p class="muted">Nobody on the roster yet.</p>'}
       </div>
     `));
+
+    // ---- search: filter rows in place, no refetch ----
+    const searchEl = $('#rosterSearch', mount);
+    if (searchEl) {
+      const applyFilter = () => {
+        const term = searchEl.value.trim().toLowerCase();
+        let shown = 0;
+        box.querySelectorAll('tbody tr').forEach((tr) => {
+          const hit = !term || tr.textContent.toLowerCase().includes(term);
+          tr.hidden = !hit;
+          if (hit) shown++;
+        });
+        let note = box.querySelector('#rosterNone');
+        if (!shown) {
+          if (!note) {
+            note = h('<p class="muted small" id="rosterNone">Nobody matches that search.</p>');
+            box.appendChild(note);
+          }
+        } else if (note) note.remove();
+      };
+      searchEl.oninput = applyFilter;
+      if (searchEl.value) applyFilter();
+    }
+
+    // ---- remind everyone who hasn't signed in ----
+    const remindBtn = box.querySelector('#remindAll');
+    if (remindBtn) {
+      remindBtn.onclick = async () => {
+        const chase = rows.filter((r) => !r.user).map((r) => r.email);
+        const ok = await confirmDialog(
+          `Email ${chase.length} student${chase.length === 1 ? '' : 's'} again?`,
+          `This resends the sign-in link to everyone who hasn't signed in yet. `
+          + `It uses ${chase.length} of your daily email allowance.`,
+          { danger: false, okLabel: `Send ${chase.length}` }
+        );
+        if (!ok) return;
+        busy(remindBtn, true, 'Sending…');
+        try {
+          const res = await httpsCallable(fns, 'sendInvites')({ emails: chase });
+          const d = res.data || {};
+          toast(d.failed
+            ? `Sent ${d.sent}, ${d.failed} failed.`
+            : `Reminder sent to ${d.sent}.`, !!d.failed);
+        } catch (err) {
+          toast(friendlyError(err), true);
+        } finally { busy(remindBtn, false); }
+      };
+    }
 
     box.querySelectorAll('[data-resend]').forEach((b) => {
       b.onclick = async () => {

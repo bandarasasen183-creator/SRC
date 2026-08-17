@@ -3,11 +3,11 @@
 import {
   db, auth,
   doc, collection, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
-  onSnapshot, query, orderBy, limit, serverTimestamp,
+  onSnapshot, query, where, orderBy, limit, serverTimestamp,
 } from './fb.js';
 import {
   esc, h, $, toast, busy, friendlyError, confirmDialog, renderBody, fmtDate, fmtWhen,
-  icon,
+  icon, todayISO,
 } from './ui.js';
 import { state, isTeacher } from './state.js';
 import {
@@ -44,6 +44,7 @@ export function renderFeed(mount) {
         <div class="btn-row" style="margin:16px 0">
           <button class="btn" id="newPost">${icon('plus', 16)} New announcement</button>
         </div>` : '<div style="height:16px"></div>'}
+      <div id="upNext"></div>
       <label class="searchbox">
         ${icon('search', 16)}
         <input type="text" id="feedSearch" class="grow" placeholder="Search announcements"
@@ -86,6 +87,7 @@ export function renderFeed(mount) {
   };
 
   searchEl.addEventListener('input', renderList);
+  loadUpNext($('#upNext', mount));
 
   const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(FEED_LIMIT));
   unsubFeed = onSnapshot(q, (snap) => {
@@ -436,4 +438,43 @@ function commentEl(a, c) {
   }
 
   return el;
+}
+
+/* ---- "coming up" strip ------------------------------------------------------
+   The calendar lives on its own tab, so a deadline can sit there unseen. This
+   surfaces the next few events at the top of the feed — one small query,
+   capped at 3, no listener.
+--------------------------------------------------------------------------- */
+
+async function loadUpNext(mount) {
+  if (!mount) return;
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'events'),
+      where('date', '>=', todayISO()),
+      orderBy('date'),
+      limit(3)
+    ));
+    if (snap.empty) return;
+
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const el = h(`
+      <div class="card upnext">
+        <div class="row small muted" style="gap:7px;margin-bottom:10px">
+          ${icon('calendar', 14)} <strong>Coming up</strong>
+          <span class="grow"></span>
+          <a href="#/events" class="small">See all</a>
+        </div>
+        ${items.map((ev) => `
+          <div class="upnext-row">
+            <span class="upnext-date">${esc(fmtDate(ev.date))}</span>
+            <span class="grow">${esc(ev.title)}</span>
+            ${ev.signupOpen ? `<span class="pill off">${icon('user-plus', 11)} Sign up</span>` : ''}
+          </div>`).join('')}
+      </div>`);
+    mount.replaceChildren(el);
+  } catch (e) {
+    // Non-critical: the calendar tab is still the source of truth.
+    console.warn('Coming up strip unavailable', e);
+  }
 }
