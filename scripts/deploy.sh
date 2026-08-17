@@ -218,6 +218,25 @@ esac
 green "Deploying to: $PROJECT_ID"
 SITE_URL="https://${PROJECT_ID}.web.app"
 
+# Write .firebaserc ourselves. `firebase use <id>` records the active project in
+# firebase-tools' GLOBAL config, keyed by directory — it never touches
+# .firebaserc. That is why this script asked for the project ID on every single
+# run, and why `npm run import` could not find one. Writing it here fixes both.
+if [ "$(node -e "
+  const fs=require('fs');
+  try { process.stdout.write(JSON.parse(fs.readFileSync('.firebaserc','utf8')).projects.default||''); }
+  catch (e) { process.stdout.write(''); }
+")" != "$PROJECT_ID" ]; then
+  node -e "
+    const fs=require('fs');
+    let c={};
+    try { c = JSON.parse(fs.readFileSync('.firebaserc','utf8')); } catch (e) {}
+    c.projects = { ...(c.projects||{}), default: process.argv[1] };
+    fs.writeFileSync('.firebaserc', JSON.stringify(c, null, 2) + '\n');
+  " "$PROJECT_ID"
+  green "remembered $PROJECT_ID in .firebaserc — it won't ask again"
+fi
+
 # ---- 4. dependencies --------------------------------------------------------
 
 step "Installing dependencies"

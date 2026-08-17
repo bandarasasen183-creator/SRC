@@ -33,6 +33,7 @@ import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 
 import { initializeApp } from 'firebase/app';
 import {
@@ -77,15 +78,42 @@ function projectFromRc() {
   try {
     // .firebaserc has no extension, so it must be read and JSON-parsed rather
     // than required — require() would treat it as JavaScript.
-    return JSON.parse(readFileSync(join(root, '.firebaserc'), 'utf8')).projects?.default || null;
+    const id = JSON.parse(readFileSync(join(root, '.firebaserc'), 'utf8')).projects?.default;
+    // demo-src is the emulator placeholder, not somewhere to write real data.
+    return id && id !== 'demo-src' ? id : null;
   } catch {
     return null;
   }
 }
 
-const PROJECT = arg('project', EMU ? 'demo-src' : projectFromRc());
+/**
+ * `firebase use <id>` does not write .firebaserc — it records the active
+ * project in firebase-tools' own config, keyed by directory. So look there too
+ * rather than insisting on a file the CLI may never have created.
+ */
+function projectFromFirebaseCli() {
+  const bases = [
+    process.env.XDG_CONFIG_HOME && join(process.env.XDG_CONFIG_HOME, 'configstore'),
+    homedir() && join(homedir(), '.config', 'configstore'),
+    homedir() && join(homedir(), 'Library', 'Preferences', 'configstore'),
+  ].filter(Boolean);
+
+  for (const base of bases) {
+    try {
+      const cfg = JSON.parse(readFileSync(join(base, 'firebase-tools.json'), 'utf8'));
+      const id = cfg.activeProjects?.[root];
+      if (id && id !== 'demo-src') return id;
+    } catch { /* not there, try the next */ }
+  }
+  return null;
+}
+
+const PROJECT = arg('project', EMU ? 'demo-src' : (projectFromRc() || projectFromFirebaseCli()));
 if (!PROJECT) {
-  die('No project. Pass --project <id>, or run scripts/deploy.sh once so .firebaserc exists.');
+  die('Could not work out which Firebase project to use.\n\n'
+    + '  Pass it directly:\n\n'
+    + '      npm run import -- --project your-project-id\n\n'
+    + '  (Your project ID is the bit before .web.app in the site URL.)');
 }
 // A project id is never all digits — a number here would fetch config from the
 // wrong host and silently do nothing.

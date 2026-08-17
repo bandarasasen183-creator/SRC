@@ -11,7 +11,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const run = promisify(execFile);
 
@@ -222,6 +222,33 @@ try {
     { SRC_IMPORT_PASSWORD: '', SRC_IMPORT_LINK: 'https://example.com/nope' });
   check('pasting something that is not a link is refused',
     notALink.code !== 0 && /does not look like a sign-in link/i.test(strip(notALink.out)));
+
+  /* ---- 6d. working out which project to use ------------------------------ */
+  // `firebase use <id>` writes to firebase-tools' own config, not .firebaserc,
+  // so the script must look in both — and must never silently target the
+  // emulator placeholder when asked to write to a real project.
+  const rcPath = new URL('../.firebaserc', import.meta.url).pathname;
+  const rcBefore = readFileSync(rcPath, 'utf8');
+  try {
+    writeFileSync(rcPath, JSON.stringify({ projects: { default: 'demo-src' } }));
+    const noProject = await run(process.execPath, ['scripts/import-classroom.mjs', '--dry-run'], {
+      cwd: new URL('..', import.meta.url).pathname,
+      env: { ...process.env, HOME: '/nonexistent-home-for-this-test' },
+    }).then(() => ({ code: 0, out: '' }), (e) => ({ code: e.code ?? 1, out: `${e.stdout || ''}${e.stderr || ''}` }));
+    check('demo-src is not accepted as a real project',
+      noProject.code !== 0, `exit ${noProject.code}`);
+    check('and it says exactly how to pass one',
+      /--project your-project-id/.test(strip(noProject.out)), strip(noProject.out).slice(-200));
+
+    writeFileSync(rcPath, JSON.stringify({ projects: { default: 'src-uhs' } }));
+    const fromRc = await run(process.execPath, ['scripts/import-classroom.mjs', '--dry-run'], {
+      cwd: new URL('..', import.meta.url).pathname,
+    });
+    check('a real .firebaserc default is picked up',
+      /project src-uhs/.test(strip(fromRc.stdout)), strip(fromRc.stdout).slice(0, 200));
+  } finally {
+    writeFileSync(rcPath, rcBefore);
+  }
 
   /* ---- 7. dry run writes nothing ---------------------------------------- */
   await reset();
