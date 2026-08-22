@@ -354,3 +354,29 @@ describe('explained() — no callable failure surfaces as bare "internal"', () =
     });
   });
 });
+
+describe('bodyExtract — a normal announcement should arrive whole', () => {
+  test('a realistic post is not truncated', () => {
+    // The Community Connect Expo post is around 1,000 characters. At the old
+    // 320-character cap it arrived cut off mid-sentence.
+    const realistic = 'We need volunteers to help run stalls, welcome guests, '
+      + 'and help run activities and events on the day. '.repeat(12);
+    const out = bodyExtract(realistic);
+    assert.ok(!out.endsWith('…'), 'a ~600-character notice was truncated');
+  });
+
+  test('but something absurd is still bounded', () => {
+    assert.ok(bodyExtract('x'.repeat(50000)).length < 1500);
+  });
+});
+
+describe('bodyExtract — paragraphs survive', () => {
+  test('a blank line between paragraphs is preserved', () => {
+    const out = bodyExtract('First para.\n\nSecond para.');
+    assert.equal(out, 'First para.\n\nSecond para.');
+  });
+
+  test('but a run of blank lines is tamed to one', () => {
+    assert.equal(bodyExtract('A.\n\n\n\n\nB.'), 'A.\n\nB.');
+  });
+});

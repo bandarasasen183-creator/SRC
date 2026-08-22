@@ -12,13 +12,23 @@ export function esc(s) {
     .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
-/** Strip our markdown subset down to a readable plain-text extract. */
-export function bodyExtract(text, max = 320) {
+/**
+ * Strip our markdown subset down to a readable plain-text extract.
+ *
+ * The cap used to be 320 characters, which cut most real announcements off
+ * mid-sentence — several of the Classroom posts run to a thousand. A short
+ * notice should arrive whole; the limit is only here so a 20,000-character
+ * body cannot turn into a 20,000-character email.
+ */
+export function bodyExtract(text, max = 1400) {
   const plain = String(text ?? '')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
     .replace(/^\s*[-*+]\s+/gm, '• ')
     .replace(/[*_`#>]/g, '')
-    .replace(/\n{2,}/g, '\n')
+    // Keep paragraph breaks. This used to collapse them to single newlines,
+    // which turned a nine-paragraph notice into one dense block — the HTML
+    // renders with white-space:pre-line, so the breaks are worth keeping.
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
   return plain.length > max ? plain.slice(0, max - 1).trimEnd() + '…' : plain;
 }
@@ -211,21 +221,85 @@ export async function sendMany(recipients, buildMessage, {
    Templates
    ========================================================================== */
 
+/*
+ * EMAIL IS NOT A BROWSER. What is safe here is a narrow subset:
+ *
+ *   * Tables and inline styles. No flexbox, no grid.
+ *   * NO EXTERNAL IMAGES. Every "icon" below is drawn with a table cell, a
+ *     background colour and a text glyph. That is deliberate: hosting icons on
+ *     the Firebase site would break them in every archived copy the day the
+ *     project is deleted, and images are blocked by default in Outlook anyway.
+ *   * Unicode glyphs, not emoji. -> and * render as text everywhere.
+ *
+ * Motion is PROGRESSIVE ENHANCEMENT and nothing more. The keyframes live in a
+ * <style> block, so Apple Mail and iOS Mail play them and Gmail and Outlook
+ * silently ignore them. The critical rule: nothing starts hidden in its inline
+ * style. If it did, every client that drops the animation would show an empty
+ * message. Base state is fully visible; the animation only adds the arrival.
+ */
 const SHELL = (inner) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark"></head>
-<body style="margin:0;padding:0;background:#f2f9f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0a1a12">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f9f5;padding:24px 12px">
+<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
+<style>
+  @keyframes srcRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes srcFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes srcPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+
+  /* Every one of these is additive. Drop the whole block and the mail still
+     reads correctly — it just arrives all at once. */
+  .a1 { animation: srcRise .55s cubic-bezier(.22,1,.36,1) both; }
+  .a2 { animation: srcRise .55s cubic-bezier(.22,1,.36,1) .10s both; }
+  .a3 { animation: srcRise .55s cubic-bezier(.22,1,.36,1) .20s both; }
+  .a4 { animation: srcRise .55s cubic-bezier(.22,1,.36,1) .30s both; }
+  .mark { animation: srcFade .8s ease both; }
+  .cta { animation: srcRise .55s cubic-bezier(.22,1,.36,1) .38s both, srcPulse 2.4s ease-in-out 1.4s 2; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .a1, .a2, .a3, .a4, .mark, .cta { animation: none !important; }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .bg   { background: #10201a !important; }
+    .card { background: #16261f !important; border-color: #2a4238 !important; }
+    .tx   { color: #e6f2ec !important; }
+    .tx2  { color: #a9c6b8 !important; }
+    .tx3  { color: #7e9c8e !important; }
+    .foot { background: #12211b !important; border-color: #2a4238 !important; }
+  }
+</style></head>
+<body class="bg" style="margin:0;padding:0;background:#f2f9f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0a1a12">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg" style="background:#f2f9f5;padding:24px 12px">
 <tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #d5e8dd">
-<tr><td style="background:#0f5a3a;padding:18px 24px">
-  <span style="color:#ffffff;font-size:18px;font-weight:800;letter-spacing:-.02em">SRC</span>
-  <span style="color:#b6f0ce;font-size:13px;margin-left:8px">Student Representative Council</span>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="card" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #d5e8dd">
+
+<tr><td style="background:#0f5a3a;padding:16px 24px">
+  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+    <!-- Monogram, drawn: a cell with a background and a radius. Outlook shows
+         a square instead of a circle, which is a fine thing to degrade to. -->
+    <td class="mark" width="34" height="34" align="center" valign="middle"
+        style="width:34px;height:34px;background:#ffffff;border-radius:17px;
+               color:#0f5a3a;font-size:12px;font-weight:800;letter-spacing:-.02em">SRC</td>
+    <td style="padding-left:12px;color:#b6f0ce;font-size:13px;line-height:1.35">
+      Student Representative Council<br>
+      <span style="color:#7fd6a6;font-size:12px">Ulladulla High School</span>
+    </td>
+  </tr></table>
 </td></tr>
 ${inner}
 </table>
+<p style="max-width:560px;margin:14px auto 0;font-size:11px;line-height:1.5;color:#8aa79a;text-align:center">
+  Sent by the SRC site. Everything in this email is also in the app.
+</p>
 </td></tr></table>
 </body></html>`;
+
+/** A small drawn pill — the email-safe stand-in for an icon chip. */
+const pill = (glyph, label, colour = '#0f5a3a', bg = '#e6f4ec') => `
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 0"><tr>
+  <td style="background:${bg};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:700;color:${colour}">
+    <span style="font-size:14px">${glyph}</span>&nbsp; ${esc(label)}
+  </td>
+</tr></table>`;
 
 /** Announcement notification. Subject is always "SRC update …". */
 export function announcementEmail({ title, body, appUrl, hasForm }) {
@@ -233,22 +307,32 @@ export function announcementEmail({ title, body, appUrl, hasForm }) {
   const extract = bodyExtract(body);
 
   const html = SHELL(`
-<tr><td style="padding:24px">
-  <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#4d6a5b;font-weight:700">New announcement</p>
-  <h1 style="margin:0 0 12px;font-size:21px;line-height:1.3;color:#0a1a12">${esc(title)}</h1>
-  <div style="font-size:15px;line-height:1.6;color:#2b4438;white-space:pre-line">${esc(extract)}</div>
-  ${hasForm ? `<p style="margin:16px 0 0;font-size:14px;color:#0f5a3a;font-weight:600">📋 There's a form to fill in with this one.</p>` : ''}
-  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 8px">
+<tr><td style="padding:26px 24px 24px">
+
+  <table role="presentation" cellpadding="0" cellspacing="0" class="a1" style="margin:0 0 10px"><tr>
+    <td width="7" height="7" style="width:7px;height:7px;background:#1e9e4c;border-radius:4px;font-size:0;line-height:0">&nbsp;</td>
+    <td style="padding-left:8px;font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:#4d6a5b;font-weight:700"
+        class="tx3">New announcement</td>
+  </tr></table>
+
+  <h1 class="a2 tx" style="margin:0 0 12px;font-size:22px;line-height:1.28;color:#0a1a12;font-weight:800;letter-spacing:-.01em">${esc(title)}</h1>
+
+  <div class="a3 tx2" style="font-size:15px;line-height:1.62;color:#2b4438;white-space:pre-line">${esc(extract)}</div>
+
+  ${hasForm ? `<div class="a3">${pill('&#9744;', "There's a form to fill in with this one")}</div>` : ''}
+
+  <table role="presentation" cellpadding="0" cellspacing="0" class="cta" style="margin:24px 0 8px">
     <tr><td style="background:#0f5a3a;border-radius:999px">
-      <a href="${esc(link)}" style="display:inline-block;padding:13px 26px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">Open the SRC site</a>
+      <a href="${esc(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">Open the SRC site&nbsp; &#8594;</a>
     </td></tr>
   </table>
-  <p style="margin:14px 0 0;font-size:13px;color:#7b9488">
+
+  <p class="a4 tx3" style="margin:14px 0 0;font-size:13px;line-height:1.55;color:#7b9488">
     Everything is always available in the app, whether or not this email reaches you:<br>
     <a href="${esc(link)}" style="color:#0f5a3a">${esc(appUrl)}</a>
   </p>
 </td></tr>
-<tr><td style="padding:14px 24px;background:#f1fcf6;border-top:1px solid #d5e8dd;font-size:12px;color:#7b9488">
+<tr><td class="foot tx3" style="padding:14px 24px;background:#f1fcf6;border-top:1px solid #d5e8dd;font-size:12px;color:#7b9488">
   You're getting this because you're on the SRC roster. Talk to your SRC teacher to be removed.
 </td></tr>`);
 
